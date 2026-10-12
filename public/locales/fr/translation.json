@@ -29,6 +29,8 @@
       "FORBIDDEN": "Synchronisation bloquée (403). Votre serveur bloque peut-être la requête.",
       "LOCKED": "La synchronisation est verrouillée par un autre appareil. Réessayez dans un instant.",
       "NETWORK_ERROR": "Erreur réseau. Vérifiez votre connexion et réessayez.",
+      "ABSENT_REMOTE_HOLD": "Le fichier de synchronisation est absent de votre serveur. Rien n'a été écrit par-dessus : vos modifications sont en sécurité sur cet appareil. S'il a réellement disparu, la synchronisation le recréera automatiquement.",
+      "WRITE_UNVERIFIED": "Cet appareil n'a pas encore lu votre serveur de synchronisation : rien n'a été envoyé. Vos modifications sont en sécurité sur cet appareil — la prochaine synchronisation lira d'abord le serveur, puis écrira.",
       "SYNC_FAILED": "La synchronisation n'a pas abouti : {{detail}}. Elle sera relancée automatiquement.",
       "PASSPHRASE_REQUIRED": "Saisissez votre phrase secrète de synchronisation pour continuer.",
       "PRECONDITION_FAILED": "Un autre appareil a effectué la mise à jour en premier. Nouvelle tentative.",

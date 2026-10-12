@@ -29,6 +29,8 @@
       "FORBIDDEN": "Sync blocked (403). Your server may be blocking the request.",
       "LOCKED": "Sync is locked by another device. Try again in a moment.",
       "NETWORK_ERROR": "Network error. Check your connection and try again.",
+      "ABSENT_REMOTE_HOLD": "The sync file is missing from your sync server. Nothing was written over it — your changes are safe on this device. If it is really gone, syncing will re-create it automatically.",
+      "WRITE_UNVERIFIED": "This device hasn't read your sync server yet, so nothing was uploaded. Your changes are safe on this device — the next sync will read the server first.",
       "SYNC_FAILED": "Sync didn't finish: {{detail}}. It will try again automatically.",
       "PASSPHRASE_REQUIRED": "Enter your sync passphrase to continue.",
       "PRECONDITION_FAILED": "Another device updated first. Retrying.",

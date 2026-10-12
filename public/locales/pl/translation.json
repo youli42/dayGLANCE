@@ -39,6 +39,8 @@
       "FORBIDDEN": "Synchronizacja zablokowana (403). Twój serwer może blokować żądanie.",
       "LOCKED": "Synchronizacja jest zablokowana przez inne urządzenie. Spróbuj ponownie za chwilę.",
       "NETWORK_ERROR": "Błąd sieci. Sprawdź swoje połączenie i spróbuj ponownie.",
+      "ABSENT_REMOTE_HOLD": "Plik synchronizacji zniknął z serwera. Nic nie zostało nad nim zapisane — Twoje zmiany są bezpieczne na tym urządzeniu. Jeśli rzeczywiście go nie ma, synchronizacja utworzy go ponownie automatycznie.",
+      "WRITE_UNVERIFIED": "To urządzenie nie odczytało jeszcze serwera synchronizacji, więc nic nie zostało wysłane. Twoje zmiany są bezpieczne na tym urządzeniu — następna synchronizacja najpierw odczyta serwer, a potem zapisze.",
       "SYNC_FAILED": "Synchronizacja nie została ukończona: {{detail}}. Zostanie automatycznie ponowiona.",
       "PASSPHRASE_REQUIRED": "Podaj swoje hasło synchronizacji, aby kontynuować.",
       "PRECONDITION_FAILED": "Inne urządzenie zaktualizowało dane wcześniej. Ponowna próba.",

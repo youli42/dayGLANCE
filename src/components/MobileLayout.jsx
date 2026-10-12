@@ -325,7 +325,7 @@ const MobileLayout = () => {
     syncWithCalendar, syncTaskCalendar, syncTaskCompletionToCalDAV,
     nativeEventToTask, clearNativeEventOverride, parseDatetime, parseICS, filterByDateWindow,
     loadData, saveData,
-    cloudSyncDownload, cloudSyncUpload, cloudSyncTest, syncAll,
+    cloudSyncDownload, cloudSyncTest, syncAll,
     performObsidianSync, loadWikiNote, saveWikiNote, openInObsidian,
     performTrmnlSync,
     performLocalBackup, performRemoteBackup,

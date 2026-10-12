@@ -24,6 +24,17 @@ const LAST_SYNCED_KEY = 'day-planner-cloud-sync-last-synced';
 
 function build({ download, uploadError }) {
   const calls = { status: [], lastSynced: [], errors: [] };
+  const uploadSpy = vi.fn(async () => { throw uploadError; });
+  const provider = {
+    name: 'fake', configFields: [],
+    download: vi.fn(async () => download),
+    upload: uploadSpy,
+    test: vi.fn(),
+  };
+  // Injected through the engine's own transport seam, so the production guards
+  // (absent-remote + verified write) wrap the transport under test. A provider
+  // assigned onto engine.providers afterwards would bypass them and this test
+  // would be exercising a path the app never runs.
   const engine = createDayGlanceEngine({
     buildPayload: async () => ({ data: { tasks: [], unscheduledTasks: [] }, lastModified: '2026-10-01T00:00:00.000Z' }),
     buildBackupPayload: async () => ({}),
@@ -35,29 +46,21 @@ function build({ download, uploadError }) {
     onPassphraseRequired: () => {},
     onFirstSyncReload: () => {},
     getSyncRetentionDays: () => 90,
-  });
-  const provider = {
-    name: 'fake', configFields: [],
-    download: vi.fn(async () => download),
-    upload: vi.fn(async () => { throw uploadError; }),
-    test: vi.fn(),
-  };
-  Object.keys(engine.providers).forEach((k) => delete engine.providers[k]);
-  engine.providers.fake = provider;
+  }, { providers: { fake: provider } });
   localStorage.setItem('day-planner-cloud-sync-config', JSON.stringify({ enabled: true, provider: 'fake' }));
-  return { engine, provider, calls };
+  return { engine, provider, uploadSpy, calls };
 }
 
 describe('WebDAV cycle with a failing upload (#2037)', () => {
   beforeEach(() => { store.clear(); vi.useFakeTimers(); });
 
   it('seeding an empty remote: a failed upload is reported and "Last synced" is not stamped', async () => {
-    const { engine, provider, calls } = build({ download: null, uploadError: new Error('Upload failed: 409 Conflict') });
+    const { engine, uploadSpy, calls } = build({ download: null, uploadError: new Error('Upload failed: 409 Conflict') });
     const p = engine.download();
     await vi.advanceTimersByTimeAsync(3000);
     await p;
     vi.useRealTimers();
-    expect(provider.upload).toHaveBeenCalled();
+    expect(uploadSpy).toHaveBeenCalled();
     expect(localStorage.getItem(LAST_SYNCED_KEY)).toBe(null);
     expect(calls.lastSynced).toEqual([]);
     expect(calls.status).toContain('error');

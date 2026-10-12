@@ -143,6 +143,7 @@ import useDailyBriefings from './hooks/useDailyBriefings.js';
 import useVoiceInput from './hooks/useVoiceInput.js';
 import useCloudSync from './hooks/useCloudSync.js';
 import { createDayGlanceEngine } from './sync/adapter.js';
+import { resolveSyncTarget } from './sync/syncTarget.js';
 import { createDbEngine, resetVaultSyncCursor } from './sync/dbEngine.js';
 import { deriveBlockEnergy } from './utils/energyAxis.js';
 import { registerDbEngine } from './sync/dirtyTracker.js';
@@ -965,6 +966,31 @@ const DayPlanner = () => {
     // always run the latest engine method without a closure refresh.
     cloudSyncDownloadRef.current = () => cloudSyncEngineRef.current.download();
   }
+
+  // Cloud sync: a changed sync target (server, account or folder) invalidates what
+  // this device knows about the remote, so reconfiguration must not be followed by
+  // a write built on the OLD target's knowledge. Cancel any upload the debounce
+  // armed against the previous target (Save does not cancel it), release a hard
+  // stop the old server may have set (nothing else clears it), and read the new
+  // target once — the engine adapter refuses writes no read has backed
+  // (src/sync/verifiedWriteGuard.js).
+  const syncTargetKey = useMemo(
+    () => resolveSyncTarget(cloudSyncConfig, syncFolder)?.key ?? null,
+    [cloudSyncConfig, syncFolder],
+  );
+  const syncTargetSeenRef = useRef(syncTargetKey);
+  useEffect(() => {
+    if (syncTargetSeenRef.current === syncTargetKey) return;
+    syncTargetSeenRef.current = syncTargetKey;
+    if (cloudSyncDebounceRef.current) {
+      clearTimeout(cloudSyncDebounceRef.current);
+      cloudSyncDebounceRef.current = null;
+    }
+    cloudSyncEngineRef.current?.clearHardStop?.();
+    if (dataLoaded && cloudSyncConfig?.enabled && syncKeyReady) {
+      cloudSyncDownloadRef.current?.();
+    }
+  }, [syncTargetKey, dataLoaded, cloudSyncConfig?.enabled, syncKeyReady, cloudSyncDebounceRef, cloudSyncDownloadRef]);
 
   // Daily Notes state — keyed by date string "YYYY-MM-DD" → { text, lastModified }
   // Your notes on imported calendar events (utils/eventNotes.js): apart
@@ -8287,7 +8313,9 @@ const DayPlanner = () => {
     // ── Functions – data persistence ──────────────────────────────────────────
     loadData, saveData,
     cloudSyncDownload: () => cloudSyncEngineRef.current.download(),
-    cloudSyncUpload:   (prebuilt, opts) => cloudSyncEngineRef.current.upload({ prebuiltPayload: prebuilt, ...opts }),
+    // There is deliberately no bare-upload binding: the header button and the
+    // settings "Sync now" both run the full cycle (utils/syncNowAction.js), and
+    // a write with no read behind it is refused by the engine adapter anyway.
     cloudSyncTest:     (cfg) => cloudSyncEngineRef.current.test(cfg),
     // Manual "Sync now" for the WebDAV file tier (full merge cycle).
     cloudSyncNow:      () => cloudSyncEngineRef.current.sync(),

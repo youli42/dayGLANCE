@@ -35,6 +35,7 @@ import MobileListView from './MobileListView.jsx';
 import MobileViewToggle from './MobileViewToggle.jsx';
 import { useDayPlannerCtx } from '../context/DayPlannerContext.jsx';
 import { useSyncCtx } from '../context/SyncContext.jsx';
+import { runSyncNow } from '../utils/syncNowAction.js';
 import { useFeaturesCtx } from '../context/FeaturesContext.jsx';
 import { useTranslation } from 'react-i18next';
 
@@ -298,7 +299,7 @@ const DesktopLayout = () => {
     syncWithCalendar, syncTaskCalendar, syncTaskCompletionToCalDAV,
     nativeEventToTask, clearNativeEventOverride, parseDatetime, parseICS, filterByDateWindow,
     loadData, saveData,
-    cloudSyncDownload, cloudSyncUpload, cloudSyncTest, syncAll,
+    cloudSyncDownload, cloudSyncTest, syncAll,
     vaultEnabled, vaultStatus, vaultLastSynced, vaultSyncNow,
     performObsidianSync, loadWikiNote, saveWikiNote, openInObsidian,
     performTrmnlSync,
@@ -319,7 +320,7 @@ const DesktopLayout = () => {
   const effSyncStatus = webdavOn ? cloudSyncStatus : vaultStatus;
   const effSyncLastSynced = webdavOn ? cloudSyncLastSynced : vaultLastSynced;
   const effSyncing = effSyncStatus === 'uploading' || effSyncStatus === 'downloading';
-  const triggerSync = () => { if (webdavOn) cloudSyncUpload(); if (vaultEnabled) vaultSyncNow?.(); };
+  const triggerSync = () => runSyncNow({ webdavOn, vaultEnabled, cloudSyncDownload, vaultSyncNow });
   const locale = i18n.resolvedLanguage || i18n.language;
   const formatSyncTime = (timestamp) => new Intl.DateTimeFormat(locale, {
     hour: 'numeric',

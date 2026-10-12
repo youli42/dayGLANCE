@@ -28,6 +28,8 @@
       "FORBIDDEN": "Sincronização bloqueada (403). Seu servidor pode estar bloqueando a solicitação.",
       "LOCKED": "A sincronização está bloqueada por outro dispositivo. Tente novamente dentro de momentos.",
       "NETWORK_ERROR": "Erro de rede. Verifique sua conexão e tente novamente.",
+      "ABSENT_REMOTE_HOLD": "O arquivo de sincronização está ausente do seu servidor. Nada foi gravado por cima — suas alterações estão seguras neste dispositivo. Se ele realmente sumiu, a sincronização vai recriá-lo automaticamente.",
+      "WRITE_UNVERIFIED": "Este dispositivo ainda não leu seu servidor de sincronização, então nada foi enviado. Suas alterações estão seguras neste dispositivo — a próxima sincronização lerá o servidor primeiro e depois gravará.",
       "SYNC_FAILED": "A sincronização não foi concluída: {{detail}}. Ela será tentada novamente de forma automática.",
       "PASSPHRASE_REQUIRED": "Digite sua frase de sincronização para continuar.",
       "PRECONDITION_FAILED": "Outro dispositivo atualizou primeiro. A tentar novamente.",

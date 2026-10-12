@@ -537,7 +537,12 @@ const CloudSyncSettingsForm = ({ darkMode, textPrimary, textSecondary, borderCla
               <p className={`text-xs ${textSecondary}`}>{t('sync.form.vaultAllowPrivateAddressHint')}</p>
             </div>
           )}
-          {cloudSyncStatus === 'error' && cloudSyncError ? (
+          {/* Deliberately NOT gated on `cloudSyncStatus === 'error'`: the engine
+              settles the status back to 'idle' on the line after it reports, so
+              gating here hid every refusal (the absent-remote hold, an unverified
+              write) and sync simply looked stopped. cloudSyncError is only ever
+              set with a message and is cleared at the start of the next cycle. */}
+          {cloudSyncError ? (
             <p className="text-xs text-red-500">{cloudSyncError}</p>
           ) : cloudSyncLastSynced ? (
             <p className={`text-xs ${textSecondary}`}>

@@ -12,6 +12,7 @@ import { useMcpStatus, McpBoltButton, McpStatusModal } from './McpStatusControls
 import DayDialIcon from './DayDialIcon.jsx';
 import SpaceSwitcher, { GoalsSpaceTitle } from './SpaceSwitcher.jsx';
 import { useSyncCtx } from '../context/SyncContext.jsx';
+import { runSyncNow } from '../utils/syncNowAction.js';
 import { useFeaturesCtx } from '../context/FeaturesContext.jsx';
 
 const DesktopHeader = () => {
@@ -43,7 +44,7 @@ const DesktopHeader = () => {
     cloudSyncConfig, cloudSyncStatus, cloudSyncLastSynced,
     vaultEnabled, vaultStatus, vaultLastSynced, vaultSyncNow,
     obsidianConfig, obsidianSyncStatus, obsidianSyncError, obsidianLastSynced, obsidianVaultAccess,
-    cloudSyncUpload, syncAll, performObsidianSync,
+    cloudSyncDownload, syncAll, performObsidianSync,
   } = useSyncCtx();
   const { setShowRemindersSettings, activeReminders, desktopSpace = 'calendar' } = useFeaturesCtx();
   const { t, i18n } = useTranslation();
@@ -55,13 +56,15 @@ const DesktopHeader = () => {
   // Cloud-sync button: only meaningful once WebDAV and/or GLANCEvault is set up.
   // (Single-device or zero-config iCloud users get no button — Settings still has
   // the full config.) When only the vault is enabled, the button drives a vault
-  // sync and reflects vault status; WebDAV keeps its existing upload behaviour.
+  // sync and reflects vault status. The file tier runs the full cycle
+  // (read → merge → write) — see utils/syncNowAction.js for why it must never be
+  // a bare upload.
   const webdavOn = !!cloudSyncConfig?.enabled;
   const syncConfigured = webdavOn || vaultEnabled;
   const effSyncStatus = webdavOn ? cloudSyncStatus : vaultStatus;
   const effSyncLastSynced = webdavOn ? cloudSyncLastSynced : vaultLastSynced;
   const effSyncing = effSyncStatus === 'uploading' || effSyncStatus === 'downloading';
-  const triggerSync = () => { if (webdavOn) cloudSyncUpload(); if (vaultEnabled) vaultSyncNow?.(); };
+  const triggerSync = () => runSyncNow({ webdavOn, vaultEnabled, cloudSyncDownload, vaultSyncNow });
   const locale = i18n.resolvedLanguage || i18n.language;
   const formatSyncTime = (timestamp) => new Intl.DateTimeFormat(locale, {
     hour: 'numeric',

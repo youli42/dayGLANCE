@@ -85,6 +85,9 @@ const EXCLUDED_KEYS = new Set([
   'day-planner-auto-backup-local-last',
   'day-planner-auto-backup-remote-last',
   'day-planner-cloud-sync-last-synced',
+  // Which target this device last verified (an ETag, per server/account/folder).
+  // A restored profile must not inherit another profile's evidence.
+  'day-planner-cloud-sync-verified-remote',
   'day-planner-cloud-sync-local-modified',
   'day-planner-local-edit-at',
   'day-planner-cal-sync-last-synced',

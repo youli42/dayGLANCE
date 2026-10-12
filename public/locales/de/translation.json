@@ -28,6 +28,8 @@
       "FORBIDDEN": "Synchronisierung blockiert (403). Ihr Server blockiert möglicherweise die Anfrage.",
       "LOCKED": "Die Synchronisierung ist von einem anderen Gerät gesperrt. Versuchen Sie es gleich noch einmal.",
       "NETWORK_ERROR": "Netzwerkfehler. Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+      "ABSENT_REMOTE_HOLD": "Die Synchronisierungsdatei fehlt auf Ihrem Sync-Server. Es wurde nichts darüber geschrieben — Ihre Änderungen sind auf diesem Gerät sicher. Wenn sie wirklich weg ist, wird die Synchronisierung sie automatisch neu anlegen.",
+      "WRITE_UNVERIFIED": "Dieses Gerät hat Ihren Sync-Server noch nicht gelesen, daher wurde nichts hochgeladen. Ihre Änderungen sind auf diesem Gerät sicher — die nächste Synchronisierung liest zuerst den Server und schreibt dann.",
       "SYNC_FAILED": "Die Synchronisierung wurde nicht abgeschlossen: {{detail}}. Sie wird automatisch erneut versucht.",
       "PASSPHRASE_REQUIRED": "Geben Sie Ihre Sync-Passphrase ein, um fortzufahren.",
       "PRECONDITION_FAILED": "Ein anderes Gerät hat zuerst aktualisiert. Wird erneut versucht.",
