@@ -1,7 +1,8 @@
 // GLANCEvault URL transport-security policy (shared by the settings form's Save +
 // Test Connection paths). The native Android/iOS shells enforce the SAME rule as a
-// belt-and-braces check before opening a stream (see VaultSseClient.kt /
-// VaultSseBridge.swift), so keep this logic and theirs in agreement.
+// belt-and-braces check before opening a connection (see Android's
+// bridge/LanHostPolicy.kt and iOS's VaultSseBridge.swift), so keep this logic
+// and theirs in agreement.
 //
 // RULE: the Bearer device token must not travel over cleartext on the public
 // internet. Require https://, EXCEPT allow http:// for loopback and LAN hosts

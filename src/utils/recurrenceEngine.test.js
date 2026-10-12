@@ -10,6 +10,7 @@ import {
   toggleRecurrenceDay,
   setRecurrenceFrequency,
   weekdayOrder,
+  editedSeriesStart,
 } from './recurrenceEngine.js';
 
 // The clock is frozen for the whole file. getNextOccurrence reads "today", and
@@ -347,5 +348,212 @@ describe('a multi-day set the picker can now build', () => {
     // Mon 17th and Wed 19th fire; the following week is skipped entirely.
     expect(getOccurrencesInRange(t, '2026-08-17', '2026-08-30'))
       .toEqual(['2026-08-17', '2026-08-19']);
+  });
+});
+
+describe('editedSeriesStart — a pattern edit anchors on the edited occurrence', () => {
+  const addDays = (dateStr, n) => {
+    const d = new Date(dateStr + 'T12:00:00');
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const expand = (recurrence, startDate, from, to) =>
+    getOccurrencesInRange({ recurrence: { ...recurrence, startDate } }, from, to);
+
+  it('keeps the start for patterns that carry their own days', () => {
+    for (const rec of [
+      { type: 'daily' },
+      { type: 'weekly', daysOfWeek: [1, 3, 5] },
+      { type: 'monthly', monthDay: 20, monthWeekday: null },
+      { type: 'monthly', monthDay: null, monthWeekday: { week: 3, day: 2 } },
+    ]) {
+      expect(editedSeriesStart(rec, '2026-10-15', '2026-10-20')).toBe('2026-10-15');
+    }
+  });
+
+  it('starts at the edited date when the edit is made from before the start, or there is no start', () => {
+    expect(editedSeriesStart({ type: 'daily' }, '2026-10-15', '2026-10-12')).toBe('2026-10-12');
+    expect(editedSeriesStart({ type: 'yearly' }, undefined, '2026-10-12')).toBe('2026-10-12');
+  });
+
+  describe('yearly', () => {
+    it('recurs on the edited date, not on the start date', () => {
+      const start = editedSeriesStart({ type: 'yearly' }, '2026-10-15', '2026-10-20');
+      expect(start).toBe('2026-10-20');
+      expect(expand({ type: 'yearly' }, start, '2026-01-01', '2028-12-31'))
+        .toEqual(['2026-10-20', '2027-10-20', '2028-10-20']);
+    });
+
+    it('takes the first year on or after the start, which can be before the edited one', () => {
+      // Started Mar 2025, edited from the Feb 10 2027 occurrence: Feb 10 2026
+      // is already inside the series.
+      expect(editedSeriesStart({ type: 'yearly' }, '2025-03-01', '2027-02-10')).toBe('2026-02-10');
+    });
+
+    it('keeps a start that already falls on the edited date', () => {
+      expect(editedSeriesStart({ type: 'yearly' }, '2024-10-20', '2026-10-20')).toBe('2024-10-20');
+    });
+
+    it('lands a 29 February on a leap year', () => {
+      expect(editedSeriesStart({ type: 'yearly' }, '2025-01-01', '2028-02-29')).toBe('2028-02-29');
+    });
+  });
+
+  describe('biweekly', () => {
+    it('keeps the edited occurrence when the start week is off phase', () => {
+      // Thu Oct 15 start, edited from Tue Oct 20 to every 2 weeks on Tuesday.
+      // Keeping Oct 15 put the phase on Oct 27, skipping Oct 20 itself.
+      const rec = { type: 'biweekly', daysOfWeek: [2] };
+      const start = editedSeriesStart(rec, '2026-10-15', '2026-10-20');
+      expect(start).toBe('2026-10-20');
+      expect(expand(rec, start, '2026-10-01', '2026-11-30'))
+        .toEqual(['2026-10-20', '2026-11-03', '2026-11-17']);
+    });
+
+    it('keeps the start when its week is already in phase', () => {
+      expect(editedSeriesStart({ type: 'biweekly', daysOfWeek: [2] }, '2026-10-15', '2026-10-27')).toBe('2026-10-15');
+    });
+
+    it('starts on the first selected day of the next week, not on the edited day', () => {
+      const rec = { type: 'biweekly', daysOfWeek: [1, 2, 4] };
+      expect(editedSeriesStart(rec, '2026-10-15', '2026-10-20')).toBe('2026-10-19');
+    });
+
+    it('with no daysOfWeek, starts on the edited weekday, which the engine then falls back to', () => {
+      const start = editedSeriesStart({ type: 'biweekly' }, '2026-10-15', '2026-10-20');
+      expect(start).toBe('2026-10-20');
+      expect(expand({ type: 'biweekly' }, start, '2026-10-01', '2026-11-05')).toEqual(['2026-10-20', '2026-11-03']);
+    });
+  });
+
+  // The invariant, over many start/edit pairs: the series never starts earlier
+  // than it did, always keeps the occurrence the edit was made from, and yields
+  // exactly the new pattern anchored on that occurrence from the old start on.
+  // The reference set expands from an in-phase anchor well before the start,
+  // then drops everything before it.
+  it.each([
+    ['biweekly', { type: 'biweekly', daysOfWeek: [2] }, (d) => addDays(d, -14 * 60)],
+    ['biweekly, several days', { type: 'biweekly', daysOfWeek: [0, 3, 6] }, (d) => addDays(d, -14 * 60)],
+    ['yearly', { type: 'yearly' }, (d) => `${Number(d.slice(0, 4)) - 8}${d.slice(4)}`],
+  ])('%s: same occurrences as the pattern anchored on the edit, from the old start on', (_label, rec, farAnchor) => {
+    const origStarts = ['2026-01-01', '2026-02-26', '2026-03-08', '2026-06-30', '2026-10-15', '2026-11-01'];
+    for (const origStart of origStarts) {
+      for (let offset = 0; offset < 400; offset += 11) {
+        const dateStr = addDays(origStart, offset);
+        if (dateStr.endsWith('02-29')) continue;
+        // Only an edit made from a day the new pattern itself produces.
+        if (rec.daysOfWeek && !rec.daysOfWeek.includes(new Date(dateStr + 'T12:00:00').getDay())) continue;
+        const start = editedSeriesStart(rec, origStart, dateStr);
+        const to = addDays(dateStr, 800);
+        const got = expand(rec, start, '2020-01-01', to);
+        const want = expand(rec, farAnchor(dateStr), origStart, to);
+
+        expect(start >= origStart).toBe(true);
+        expect(got).toContain(dateStr);
+        expect(got).toEqual(want);
+      }
+    }
+  });
+
+  it('counts maxOccurrences from the same first occurrence', () => {
+    const rec = { type: 'biweekly', daysOfWeek: [2], maxOccurrences: 3 };
+    const start = editedSeriesStart(rec, '2026-10-15', '2026-10-20');
+    expect(expand(rec, start, '2026-01-01', '2027-12-31')).toEqual(['2026-10-20', '2026-11-03', '2026-11-17']);
+  });
+});
+
+// A pattern that already produces the edited occurrence keeps its start. The
+// mobile editor passes the unchanged pattern on every save (#2049), so this is
+// what keeps an ordinary save from rewriting the series.
+describe('editedSeriesStart — an occurrence the pattern already produces keeps the start', () => {
+  const addDays = (dateStr, n) => {
+    const d = new Date(dateStr + 'T12:00:00');
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+
+  it('keeps a 29 February yearly series on its leap day when a 1 March occurrence is saved', () => {
+    const rec = { type: 'yearly', startDate: '2024-02-29' };
+    const shown = getOccurrencesInRange({ recurrence: rec }, '2025-01-01', '2025-12-31');
+    expect(shown).toEqual(['2025-03-01']);
+    expect(editedSeriesStart(rec, '2024-02-29', '2025-03-01')).toBe('2024-02-29');
+  });
+
+  it('still anchors a yearly edit on a day the pattern does not produce', () => {
+    expect(editedSeriesStart({ type: 'yearly' }, '2026-10-15', '2026-10-20')).toBe('2026-10-20');
+  });
+
+  it('saving any real yearly or biweekly occurrence never moves the start', () => {
+    const patterns = [
+      { type: 'yearly' },
+      { type: 'biweekly', daysOfWeek: [2] },
+      { type: 'biweekly', daysOfWeek: [1, 3, 5] },
+      { type: 'biweekly', daysOfWeek: [0, 6] },
+      { type: 'biweekly', daysOfWeek: [] },
+    ];
+    const moved = [];
+    let checked = 0;
+    // Every third day across 2023-2024 (all weekday/phase alignments), plus
+    // the leap day itself and its neighbours.
+    const starts = [];
+    for (let i = 0; i < 731; i += 3) starts.push(addDays('2023-01-01', i));
+    starts.push('2024-02-28', '2024-02-29', '2024-03-01');
+    for (const start of starts) {
+      for (const p of patterns) {
+        const rec = { ...p, startDate: start };
+        for (const occ of getOccurrencesInRange({ recurrence: rec }, start, addDays(start, 3 * 366))) {
+          checked++;
+          if (editedSeriesStart(rec, start, occ) !== start) moved.push(`${p.type} ${start} @ ${occ}`);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(10000);
+    expect(moved).toEqual([]);
+  });
+});
+
+// Yearly dates come from the start's month and day. Stepping the previous
+// occurrence forward carried 29 February's overflow on: 2024-02-29 became
+// 2025-03-01 and then stayed on 1 March, leap years included.
+describe('getOccurrencesInRange — yearly from a 29 February start', () => {
+  const leap = { recurrence: { type: 'yearly', startDate: '2024-02-29' } };
+
+  it('returns to 29 February in every leap year and keeps 1 March in the others', () => {
+    expect(getOccurrencesInRange(leap, '2024-01-01', '2033-12-31')).toEqual([
+      '2024-02-29', '2025-03-01', '2026-03-01', '2027-03-01',
+      '2028-02-29', '2029-03-01', '2030-03-01', '2031-03-01',
+      '2032-02-29', '2033-03-01',
+    ]);
+  });
+
+  it('finds the leap-year occurrence from a range that starts inside that year', () => {
+    expect(getOccurrencesInRange(leap, '2028-02-01', '2028-03-31')).toEqual(['2028-02-29']);
+  });
+
+  it('counts maxOccurrences and stops at endDate across the leap years', () => {
+    const limited = { recurrence: { ...leap.recurrence, maxOccurrences: 5 } };
+    expect(getOccurrencesInRange(limited, '2024-01-01', '2040-12-31'))
+      .toEqual(['2024-02-29', '2025-03-01', '2026-03-01', '2027-03-01', '2028-02-29']);
+    const ended = { recurrence: { ...leap.recurrence, endDate: '2028-02-29' } };
+    expect(getOccurrencesInRange(ended, '2024-01-01', '2040-12-31').at(-1)).toBe('2028-02-29');
+  });
+
+  it('honours a deleted occurrence on the leap day', () => {
+    const t = { ...leap, exceptions: { '2028-02-29': { deleted: true } } };
+    expect(getOccurrencesInRange(t, '2028-01-01', '2028-12-31')).toEqual([]);
+  });
+
+  it('leaves every other start date on its own month and day, every year', () => {
+    const moved = [];
+    // Every start in 2023 (no 29 February), over 13 years spanning 2024, 2028
+    // and 2032.
+    for (let i = 0; i < 365; i++) {
+      const d = new Date('2023-01-01T12:00:00');
+      d.setDate(d.getDate() + i);
+      const start = d.toISOString().slice(0, 10);
+      const occ = getOccurrencesInRange({ recurrence: { type: 'yearly', startDate: start } }, start, `${2023 + 12}-12-31`);
+      if (occ.length !== 13 || occ.some((o, k) => o !== `${2023 + k}${start.slice(4)}`)) moved.push(start);
+    }
+    expect(moved).toEqual([]);
   });
 });

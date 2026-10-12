@@ -26,6 +26,7 @@ import { partitionExpiredSingleDayFrames } from './utils/expiredFrames.js';
 import { webdavFetch } from './utils/cloudSyncProviders.js';
 import { normalizeEtag } from '@glance-apps/sync';
 import { autoBackupDB, createAutoBackupProvidersForFolder, AUTO_BACKUP_RETENTION, AUTO_BACKUP_INTERVALS } from './utils/autoBackup.js';
+import { normalizeSyncFolder } from './utils/syncFolder.js';
 import { LIVE_BACKUP_FILENAME } from './utils/folderBackup.js';
 import { collectDeviceSettings, applyDeviceSettings } from './utils/deviceSettings.js';
 import { isResetInProgress } from './utils/resetAppData.js';
@@ -41,6 +42,7 @@ import { buildProjectedDay, projectionDates, guardSnapshotSize } from './utils/w
 import { computeRecurringExpansionRange } from './utils/recurringExpansionRange.js';
 import { parseRecurringId } from './utils/recurringId.js';
 import { expandRecurringTasks } from './utils/expandRecurringTasks.js';
+import { instanceEditChanges, applyRecurringInstanceEdit } from './utils/recurringInstanceEdit.js';
 import { buildWidgetMonthWindow } from './utils/widgetMonthWindow.js';
 import { resolveDayLink, decodeBridgeLink } from './utils/dayLink.js';
 import { widgetDayTasks } from './utils/widgetNativeEvents.js';
@@ -97,6 +99,7 @@ import StorageBreakdownModal from './components/StorageBreakdownModal.jsx';
 import IntentActivityLogModal from './components/IntentActivityLogModal.jsx';
 import EmptyBinConfirmModal from './components/EmptyBinConfirmModal.jsx';
 import RecurringDeleteModal from './components/RecurringDeleteModal.jsx';
+import RecurringEditModal from './components/RecurringEditModal.jsx';
 import EditRecurrenceModal from './components/EditRecurrenceModal.jsx';
 import ReminderToasts from './components/ReminderToasts.jsx';
 import TaskPeek from './components/TaskPeek.jsx';
@@ -113,6 +116,8 @@ import useAudio from './hooks/useAudio.js';
 import useUndo from './hooks/useUndo.js';
 import useJoboUndo from './hooks/useJoboUndo.js';
 import { buildPastDaySlices, buildPastDayIndex, pastDayDisplay, doSessionsByTask } from './jobo/pastDay.js';
+import { makeTaskDraft } from './jobo/carryForward.js';
+import { prepareDoLink } from './jobo/viewActions.js';
 import useTodayEnded from './hooks/useTodayEnded.js';
 import { EVENT_NOTES_KEY, applyEventNotes, readEventNotes, withEventNote } from './utils/eventNotes.js';
 import { ZOOM_STORAGE_KEY, readZooms, withZoom } from './utils/timelineZoom.js';
@@ -125,6 +130,8 @@ import useHabits from './hooks/useHabits.js';
 import useRoutines, { sanitizeMergedRoutineCompletions, startOfTodayIso } from './hooks/useRoutines.js';
 import useGoalsProjects from './hooks/useGoalsProjects.js';
 import useJoboLedger from './hooks/useJoboLedger.js';
+import useFocusDo from './hooks/useFocusDo.js';
+import useFocusOrchestration from './hooks/useFocusOrchestration.js';
 import useFocusMode from './hooks/useFocusMode.js';
 import useTrmnlSync from './hooks/useTrmnlSync.js';
 import useObsidian from './hooks/useObsidian.js';
@@ -228,6 +235,7 @@ import { isTrayMode } from './utils/trayMode.js';
 import { shouldFetchNativeEvents } from './utils/trayFetchGate.js';
 import { nativeFetchWindowFor, windowDates, NATIVE_FETCH_RADIUS_DAYS } from './utils/nativeFetchWindow.js';
 import { weekViewDatesFor } from './utils/weekViewDates.js';
+import { dayViewColumnsFor } from './utils/dayViewColumns.js';
 import { schedRollingWindow } from './utils/schedAgenda.js';
 import useTrayPopupVisible from './hooks/useTrayPopupVisible.js';
 
@@ -430,6 +438,9 @@ const DayPlanner = () => {
     const saved = localStorage.getItem('day-planner-day-view-mode');
     return saved ? JSON.parse(saved) : 'calendar-day';
   });
+  // Today's date while DAY's arrows have paged from rolling-24 back to today's
+  // calendar day; session-only. See utils/dayViewColumns.js.
+  const [rollingDayPausedOn, setRollingDayPausedOn] = useState(null);
   // Mobile view DEFAULT (what the app opens in) vs the LIVE mode (what the
   // header toggle switches during a session). Previously one persisted value
   // played both roles, so using SCHED for a while silently became the new
@@ -569,6 +580,7 @@ const DayPlanner = () => {
   const [recurringTasks, setRecurringTasks] = useState([]);
   const [showRecurrencePicker, setShowRecurrencePicker] = useState(false);
   const [recurringDeleteConfirm, setRecurringDeleteConfirm] = useState(null); // { taskId, dateStr }
+  const [recurringEditConfirm, setRecurringEditConfirm] = useState(null); // { dateStr }
   const [editingRecurrenceTaskId, setEditingRecurrenceTaskId] = useState(null); // recurring composite ID string
   const [showRecurrenceEndDatePicker, setShowRecurrenceEndDatePicker] = useState(null); // { source: 'edit' | 'new', templateId?: number }
   const [showAddTask, setShowAddTask] = useState(false);
@@ -925,7 +937,9 @@ const DayPlanner = () => {
   // the engine) — surfaced in Cloud Sync settings so a key mismatch is visible.
   const [vaultSkipped, setVaultSkipped] = useState(0);
   const engineFolderRef = useRef(null);
-  const syncFolder = cloudSyncConfig?.syncFolder ?? 'GLANCE/dayglance';
+  // Normalized here as well as on save, so a folder stored before #2037 with a
+  // leading or trailing slash stops producing doubled slashes in the URL.
+  const syncFolder = normalizeSyncFolder(cloudSyncConfig?.syncFolder);
   const autoBackupProviders = useMemo(() => createAutoBackupProvidersForFolder(syncFolder), [syncFolder]);
   if (!cloudSyncEngineRef.current || engineFolderRef.current !== syncFolder) {
     engineFolderRef.current = syncFolder;
@@ -1339,6 +1353,7 @@ const DayPlanner = () => {
   // actually stamped anything) and, when it did fire, stamped each device's own
   // user onto shared items — manufacturing competing claims across devices.
 
+  const focusDoRef = useRef(null);
   const {
     showFocusMode, setShowFocusMode,
     focusPhase, setFocusPhase,
@@ -1361,7 +1376,7 @@ const DayPlanner = () => {
     handleFocusTimerEndRef,
     exitFocusModeRef,
     focusModeAvailableRef,
-  } = useFocusMode();
+  } = useFocusMode({ onTimerTransition: event => focusDoRef.current?.transition(event) });
 
   // ── HyperGLANCE state ────────────────────────────────────────────────────
   const [showHyperGlanceMode, setShowHyperGlanceMode] = React.useState(false);
@@ -1590,6 +1605,12 @@ const DayPlanner = () => {
     visibleDays,
     effectiveViewMode,
     monthViewActive,
+    weekViewMode,
+    weekStartDay,
+    dayViewMode,
+    rollingDayPausedOn,
+    setRollingDayPausedOn,
+    selectedDate,
     setSelectedDate,
     setShowMonthView,
     setShowSpotlight,
@@ -1669,7 +1690,15 @@ const DayPlanner = () => {
   // Direct Access intents (docs/direct-access-sync.md, Phase 7): the event-set
   // file in the connected folder, polled on the snapshot cadence; inert unless
   // its own opt-in is on. Same context shape.
-  useDirectAccessIntents(dbIntentContext);
+  // A sealed intent in the folder this device has no key for raises the same
+  // passphrase prompt the folder's sync file does (directAccessKeyWanted).
+  useDirectAccessIntents(dbIntentContext, {
+    onKeyNeeded: () => {
+      if (syncKeyReadyRef.current === null) return;
+      setDirectAccessKeyWanted(true);
+      setSyncKeyReady(false);
+    },
+  });
   // Fresh handle on the intents drain context for the SSE push client (below),
   // which triggers the SAME drain outside the poll cadence.
   const dbIntentContextRef = useRef(dbIntentContext);
@@ -3622,6 +3651,30 @@ const DayPlanner = () => {
     });
   };
 
+  // "Make a task" from an unlinked Do (the Do editor, the Check): the
+  // new-task form in the Inbox, pre-filled from the Do, which the save then
+  // links (linkDoToNewTask). Offered only while the ledger can take the link.
+  const openMakeTask = (record) => {
+    if (!record?.id) return;
+    if (swipeSchedulingInboxTaskId) swipeSchedulingInboxTaskId.current = null;
+    setMobileEditingTask(null);
+    setNewTask({
+      startTime: getNextQuarterHour(), duration: 30, date: dateToString(selectedDate), isAllDay: false, recurrence: null,
+      ...makeTaskDraft(record),
+    });
+    setShowAddTask(true);
+    // The Do editor hands focus back to the card it was opened from as it
+    // closes, after the form has taken it; take it back for the title, with
+    // the caret at the end, so typing adds to it and Enter saves.
+    requestAnimationFrame(() => setTimeout(() => {
+      const input = newTaskInputRef?.current;
+      if (!input?.isConnected) return;
+      input.focus();
+      const end = input.value.length;
+      input.setSelectionRange?.(end, end);
+    }, 0));
+  };
+
   const openMobileEditNativeEvent = (task) => {
     const overrides = JSON.parse(localStorage.getItem('day-planner-native-time-overrides') || '{}');
     const override = (task.nativeEventId && overrides[String(task.nativeEventId)]) || {};
@@ -3715,11 +3768,43 @@ const DayPlanner = () => {
 
   // A project named in the modal ("New project…") is created as the task is
   // saved, and the rest reads newTask with its real id (utils/pendingProject.js).
-  const saveMobileEditTask = () => {
+  //
+  // Editing one occurrence of a recurring series asks first whether a changed
+  // title, time, colour or assignment is for that occurrence or the whole
+  // series (#2042): RecurringEditModal calls back here with the scope. It asks
+  // before the pending project is created, so cancelling leaves nothing behind.
+  const saveMobileEditTask = (scope) => {
     if (!mobileEditingTask || !newTask.title.trim()) return;
-    saveMobileEditTaskFrom(createPendingProject(newTask, { addProject, goals }).newTask);
+    if (!scope && recurringEditNeedsScope(newTask)) {
+      setRecurringEditConfirm({ dateStr: parseRecurringId(mobileEditingTask.id).dateStr });
+      return;
+    }
+    setRecurringEditConfirm(null);
+    saveMobileEditTaskFrom(createPendingProject(newTask, { addProject, goals }).newTask, scope);
   };
-  const saveMobileEditTaskFrom = (newTask) => {
+  // The occurrence fields as the save writes them.
+  const recurringInstanceEditFrom = (newTask) => ({
+    title: cleanTitle(newTask.title),
+    startTime: newTask.isAllDay ? '00:00' : newTask.startTime,
+    duration: newTask.duration,
+    isAllDay: newTask.isAllDay || false,
+    color: newTask.color || colors[0].class,
+    assignedUserSyncIds: mobileEditingTask.assignedUserSyncIds,
+  });
+  // True when the save below would reach the occurrence-or-series branch with
+  // a changed occurrence field. Converting to a one-off (no recurrence) and
+  // moving a non-daily occurrence to another date are single-occurrence by
+  // nature and do not ask.
+  const recurringEditNeedsScope = (newTask) => {
+    if (mobileEditIsInbox || !newTask.recurrence) return false;
+    const parsed = parseRecurringId(mobileEditingTask.id);
+    if (!parsed) return false;
+    if (newTask.date && newTask.date !== parsed.dateStr && newTask.recurrence.type !== 'daily') return false;
+    const template = recurringTasks.find(t => t.id === parsed.templateId);
+    if (!template) return false;
+    return instanceEditChanges(template, parsed.dateStr, recurringInstanceEditFrom(newTask), { defaultColor: colors[0].class }).any;
+  };
+  const saveMobileEditTaskFrom = (newTask, scope) => {
     if (!mobileEditingTask || !newTask.title.trim()) return;
     pushUndo();
     const taskId = mobileEditingTask.id;
@@ -3794,55 +3879,17 @@ const DayPlanner = () => {
               assignedUserSyncIds: mobileEditingTask.assignedUserSyncIds,
             }]);
           } else {
-            // User-assignment scope chosen in the Edit Task modal: 'all' (the
-            // whole series, default) or 'this' (only the edited occurrence).
-            const assignScope = mobileEditingTask._assignScope || 'all';
-            const assigned = mobileEditingTask.assignedUserSyncIds;
-            setRecurringTasks(prev => prev.map(t => {
-              if (t.id !== parsed.templateId) return t;
-              // Title/time/colour edits always live on this date's exception.
-              const instanceException = {
-                ...(t.exceptions?.[parsed.dateStr] || {}),
-                title: cleanTitle(newTask.title),
-                startTime: newTask.isAllDay ? '00:00' : newTask.startTime,
-                duration: newTask.duration,
-                isAllDay: newTask.isAllDay || false,
-                color: newTask.color || colors[0].class,
-              };
-              let exceptions = { ...t.exceptions, [parsed.dateStr]: instanceException };
-              let templateAssigned = t.assignedUserSyncIds;
-              if (assignScope === 'this') {
-                // Assign only this occurrence: store the override on its exception.
-                // An empty array means "everybody" for this date; undefined leaves
-                // it inheriting the series value.
-                if (assigned !== undefined) instanceException.assignedUserSyncIds = assigned;
-              } else {
-                // Assign the whole series: write to the template and strip any
-                // per-instance assignment overrides so the series value wins on
-                // every occurrence.
-                templateAssigned = assigned ?? t.assignedUserSyncIds;
-                exceptions = Object.fromEntries(
-                  Object.entries(exceptions).map(([d, exc]) => {
-                    if (exc && 'assignedUserSyncIds' in exc) {
-                      const { assignedUserSyncIds, ...rest } = exc;
-                      return [d, rest];
-                    }
-                    return [d, exc];
-                  })
-                );
-              }
-              return {
-                ...t,
-                exceptions,
-                assignedUserSyncIds: templateAssigned,
-                // Project changes in the editor apply to the whole series —
-                // project membership is series-level, like the template itself.
-                projectId: newTask.projectId || undefined,
-                // Update recurrence pattern on template if changed
-                recurrence: { ...newTask.recurrence, startDate: t.recurrence?.startDate || parsed.dateStr.substring(0, 8) + '01' },
-                lastModified: new Date().toISOString(),
-              };
-            }));
+            // Scope picked in RecurringEditModal; nothing scoped changed when unset.
+            setRecurringTasks(prev => prev.map(t => t.id !== parsed.templateId ? t : applyRecurringInstanceEdit(t, {
+              dateStr: parsed.dateStr,
+              edit: recurringInstanceEditFrom(newTask),
+              scope: scope || 'this',
+              // Project and pattern are series-level, like the template itself.
+              projectId: newTask.projectId,
+              recurrence: newTask.recurrence,
+              now: new Date().toISOString(),
+              defaultColor: colors[0].class,
+            })));
           }
         }
       }
@@ -4186,193 +4233,33 @@ const DayPlanner = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSpotlight, calendarFilter, nativeCalendarKey]);
 
-  // How many session spans one day keeps for the Day Dial's focus rail.
-  // A day cannot hold many real sessions; this only bounds the pathological
-  // open-and-close case.
-  const FOCUS_SPANS_PER_DAY = 60;
-
-  // `taskId` (optional): the task a request named — the Up Next widget's
-  // Focus button (dayglance://startFocus?id=). It joins the session when the
-  // block derived from NOW does not already hold it, and is the session on its
-  // own when there is no block. Only a string counts: this is also a click
-  // handler, and an event is not a task.
-  const enterFocusMode = (taskId) => {
-    setShowFocusMode(true);
-    setFocusShowSettings(true);
-    setFocusShowStats(false);
-    setFocusPhase('work');
-    setFocusTimerSeconds(0);
-    setFocusCycleCount(0);
-    setFocusSessionStart(null);
-    setFocusCompletedTasks(new Set());
-    setFocusTimerRunning(false);
-    setFocusTaskMinutes({});
-    let block = computeFocusBlockTasks();
-    if (typeof taskId === 'string' && taskId && !block.some(t => t.id === taskId)) {
-      const named = getTasksForDate(new Date()).find(t => t.id === taskId && !t.completed);
-      if (named) block = [named, ...block];
-    }
-    setFocusBlockTasks(block);
-    setFocusWorkMinutes(25);
-    setFocusBreakMinutes(5);
-    setFocusLongBreakMinutes(15);
-    // Request fullscreen (web fallback; Android uses native immersive mode below)
-    try { document.documentElement.requestFullscreen?.(); } catch (e) {}
-    // Request wake lock
-    (async () => {
-      try {
-        if (navigator.wakeLock) {
-          wakeLockSentinel.current = await navigator.wakeLock.request('screen');
-        }
-      } catch (e) {}
-    })();
-    // Android: immersive mode + pause notifications + DND
-    nativeEnterFocusMode();
-  };
+  const {
+    enterFocusMode, startFocusTimer, exitFocusMode, dismissFocusStats, skipFocusPhase, handleFocusTimerEnd,
+  } = useFocusOrchestration({
+    joboEnabled, focusDoRef,
+    showFocusMode, setShowFocusMode,
+    focusPhase, setFocusPhase,
+    focusTimerSeconds, setFocusTimerSeconds,
+    focusCycleCount, setFocusCycleCount,
+    focusSessionStart, setFocusSessionStart,
+    focusWorkMinutes, setFocusWorkMinutes,
+    focusBreakMinutes, setFocusBreakMinutes,
+    focusLongBreakMinutes, setFocusLongBreakMinutes,
+    focusCompletedTasks, setFocusCompletedTasks,
+    setFocusShowStats, focusShowSettings, setFocusShowSettings,
+    focusTimerRunning, setFocusTimerRunning,
+    focusTaskMinutes, setFocusTaskMinutes,
+    focusBlockTasks, setFocusBlockTasks, setFocusLog,
+    focusTimerRef, wakeLockSentinel,
+    setTasks, computeFocusBlockTasks: () => computeFocusBlockTasks(),
+    getTasksForDate: (...args) => getTasksForDate(...args),
+    playFocusSound, onboardingProgress, setOnboardingProgress,
+  });
   enterFocusModeRef.current = enterFocusMode;
-  openRoutinesDashboardRef.current = openRoutinesDashboard;
-
-  const startFocusTimer = () => {
-    setFocusShowSettings(false);
-    setFocusSessionStart(new Date());
-    setFocusPhase('work');
-    setFocusTimerSeconds(focusWorkMinutes * 60);
-    setFocusTimerRunning(true);
-    playFocusSound('work');
-    triggerHaptic('medium');
-    if (!onboardingProgress.hasUsedFocusMode) {
-      setOnboardingProgress(prev => ({ ...prev, hasUsedFocusMode: true }));
-    }
-  };
   startFocusTimerRef.current = startFocusTimer;
-
-  const exitFocusMode = (showStats = true) => {
-    setFocusTimerRunning(false);
-    if (focusTimerRef.current) {
-      clearInterval(focusTimerRef.current);
-      focusTimerRef.current = null;
-    }
-    // Distribute partial work time for current in-progress work cycle
-    const minutesCopy = { ...focusTaskMinutes };
-    if (focusPhase === 'work' && focusTimerSeconds < focusWorkMinutes * 60) {
-      const elapsedMinutes = (focusWorkMinutes * 60 - focusTimerSeconds) / 60;
-      const activeTasks = focusBlockTasks.filter(t => !t.completed && !focusCompletedTasks.has(t.id));
-      if (activeTasks.length > 0) {
-        const perTask = elapsedMinutes / activeTasks.length;
-        activeTasks.forEach(t => {
-          minutesCopy[t.id] = (minutesCopy[t.id] || 0) + perTask;
-        });
-      }
-    }
-    if (Object.keys(minutesCopy).length > 0) {
-      setTasks(prev => prev.map(t => {
-        if (minutesCopy[t.id]) {
-          return { ...t, focusMinutes: (t.focusMinutes || 0) + minutesCopy[t.id] };
-        }
-        return t;
-      }));
-    }
-    // Record session in daily focus log
-    if (focusSessionStart) {
-      const sessionMinutes = Math.round((new Date() - focusSessionStart) / 60000);
-      if (sessionMinutes > 0) {
-        const sessionDateStr = dateToString(new Date(focusSessionStart));
-        // WHEN the session ran, not just how long — the Day Dial places it
-        // against the block it happened in. Minutes-of-day from the start,
-        // with the end left unwrapped past 1440 when a session crosses
-        // midnight (the log is keyed by the date the session STARTED).
-        const startMin = focusSessionStart.getHours() * 60 + focusSessionStart.getMinutes();
-        const span = { start: startMin, end: startMin + sessionMinutes };
-        setFocusLog(prev => {
-          const existing = prev[sessionDateStr] || { totalMinutes: 0, sessions: 0, cyclesCompleted: 0, tasksCompleted: 0 };
-          const updated = {
-            ...existing,
-            totalMinutes: existing.totalMinutes + sessionMinutes,
-            sessions: existing.sessions + 1,
-            cyclesCompleted: existing.cyclesCompleted + focusCycleCount,
-            tasksCompleted: existing.tasksCompleted + focusCompletedTasks.size,
-            // Bounded so that repeatedly opening and closing focus mode can't
-            // grow one day's entry without limit; the newest are kept, and
-            // totalMinutes above stays complete either way.
-            spans: [...(existing.spans || []), span].slice(-FOCUS_SPANS_PER_DAY),
-          };
-          return { ...prev, [sessionDateStr]: updated };
-        });
-      }
-    }
-    if (showStats) {
-      setFocusShowStats(true);
-    } else {
-      // Exit fullscreen and release wake lock only when closing entirely
-      try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch (e) {}
-      try { wakeLockSentinel.current?.release(); wakeLockSentinel.current = null; } catch (e) {}
-      // Android: restore system bars + DND + reschedule notifications
-      nativeExitFocusMode();
-      setShowFocusMode(false);
-    }
-  };
   exitFocusModeRef.current = exitFocusMode;
-
-  const dismissFocusStats = () => {
-    try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch (e) {}
-    try { wakeLockSentinel.current?.release(); wakeLockSentinel.current = null; } catch (e) {}
-    // Android: restore system bars + DND + reschedule notifications
-    nativeExitFocusMode();
-    setFocusShowStats(false);
-    setShowFocusMode(false);
-  };
-
-  const skipFocusPhase = () => {
-    if (focusPhase === 'work') {
-      const newCycle = focusCycleCount + 1;
-      setFocusCycleCount(newCycle);
-      if (newCycle % 4 === 0) {
-        setFocusPhase('longBreak');
-        setFocusTimerSeconds(focusLongBreakMinutes * 60);
-      } else {
-        setFocusPhase('shortBreak');
-        setFocusTimerSeconds(focusBreakMinutes * 60);
-      }
-    } else {
-      setFocusPhase('work');
-      setFocusTimerSeconds(focusWorkMinutes * 60);
-    }
-  };
-
-  const handleFocusTimerEnd = () => {
-    if (focusPhase === 'work') {
-      // Distribute work minutes across active (non-completed) block tasks
-      const activeTasks = focusBlockTasks.filter(t => !t.completed && !focusCompletedTasks.has(t.id));
-      if (activeTasks.length > 0) {
-        const perTask = focusWorkMinutes / activeTasks.length;
-        setFocusTaskMinutes(prev => {
-          const next = { ...prev };
-          activeTasks.forEach(t => {
-            next[t.id] = (next[t.id] || 0) + perTask;
-          });
-          return next;
-        });
-      }
-      const newCycle = focusCycleCount + 1;
-      setFocusCycleCount(newCycle);
-      if (newCycle % 4 === 0) {
-        setFocusPhase('longBreak');
-        setFocusTimerSeconds(focusLongBreakMinutes * 60);
-        playFocusSound('break');
-      } else {
-        setFocusPhase('shortBreak');
-        setFocusTimerSeconds(focusBreakMinutes * 60);
-        playFocusSound('break');
-      }
-    } else {
-      // Break ended → start work
-      setFocusPhase('work');
-      setFocusTimerSeconds(focusWorkMinutes * 60);
-      playFocusSound('work');
-    }
-    setFocusTimerRunning(true);
-  };
   handleFocusTimerEndRef.current = handleFocusTimerEnd;
+  openRoutinesDashboardRef.current = openRoutinesDashboard;
 
   // ── HyperGLANCE functions ──────────────────────────────────────────────────
   const instantiateHGTemplateTasks = (project, sessionDate) => {
@@ -5142,7 +5029,7 @@ const DayPlanner = () => {
       let effectiveTaskUrl = taskCalendarUrl;
       if (isNativeApp()) {
         // On native apps: fetch directly — no CORS restrictions, no proxy server available
-        const result = nativeHttpRequest('GET', taskCalendarUrl, taskAuthHeaders, '');
+        const result = await nativeHttpRequest('GET', taskCalendarUrl, taskAuthHeaders, '');
         if (!result || !result.ok) throw new Error('Failed to fetch task calendar');
         icsContent = result.body;
       } else {
@@ -6299,39 +6186,15 @@ const DayPlanner = () => {
     showWelcome, setShowWelcome,
   });
 
-  // Columns for DayView — three 8-hour windows.
-  // 'calendar-day': fixed 00-08 / 08-16 / 16-24 for selectedDate.
-  // 'rolling-24': leftmost column is the current 8-hour block; columns that
-  // cross midnight carry the next calendar day's date.
-  const dayViewColumns = useMemo(() => {
-    const base = new Date(selectedDate);
-    base.setHours(0, 0, 0, 0);
-    const nextDay = new Date(base);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const baseStr = dateToString(base);
-    const nextStr = dateToString(nextDay);
-
-    // rolling-24 only makes sense when viewing today; fall back to calendar-day for other dates
-    const isViewingToday = baseStr === dateToString(new Date());
-    if (dayViewMode === 'rolling-24' && isViewingToday) {
-      const blockStart = Math.floor(currentTime.getHours() / 8) * 8;
-      return [0, 1, 2].map(i => {
-        const absStart = blockStart + i * 8;
-        const crossesMidnight = absStart >= 24;
-        const startHour = absStart % 24;
-        const endHour = startHour + 8;
-        const date = crossesMidnight ? nextDay : base;
-        const dateStr = crossesMidnight ? nextStr : baseStr;
-        return { startHour, endHour, date, dateStr };
-      });
-    }
-    // calendar-day (default)
-    return [
-      { startHour: 0,  endHour: 8,  date: base, dateStr: baseStr },
-      { startHour: 8,  endHour: 16, date: base, dateStr: baseStr },
-      { startHour: 16, endHour: 24, date: base, dateStr: baseStr },
-    ];
-  }, [selectedDate, dayViewMode, currentTime]);
+  // Columns for DayView — three 8-hour windows; the rule (and why rolling-24
+  // can be paused for today) is in utils/dayViewColumns.js.
+  const dayViewColumns = useMemo(
+    () => dayViewColumnsFor({ selectedDate, dayViewMode, rollingPausedOn: rollingDayPausedOn, now: currentTime }),
+    [selectedDate, dayViewMode, rollingDayPausedOn, currentTime]);
+  // Paged off the live rolling page onto today's calendar day: the header
+  // offers Today to return to it.
+  const dayViewRollingPaused = effectiveViewMode === 'day' && dayViewMode === 'rolling-24'
+    && dateToString(selectedDate) === dateToString(currentTime) && rollingDayPausedOn === dateToString(currentTime);
 
   // Auto-select new tags when they appear (only truly new tags, not previously deselected ones)
   const prevAllTagsRef = useRef(new Set(allTags));
@@ -6892,6 +6755,24 @@ const DayPlanner = () => {
   const dialFramesForDate = useCallback((date) => getFrameInstancesForDate(date)
     .map(f => ({ ...f, slots: dialFrameSlots(f, date) })), [getFrameInstancesForDate, dialFrameSlots]);
 
+  // "Make a task" from an unlinked Do: once the task form saves, link the Do
+  // to the new task (jobo/viewActions.js prepareDoLink), as one more step of
+  // the undo history. A Do that changed since the form opened stays as it is,
+  // and the toast says so.
+  const linkDoToNewTask = async (linkDo, taskId) => {
+    const next = prepareDoLink({ records: joboRecords, record: linkDo, taskId, now: Date.now() });
+    if (!next) { setUndoToast({ message: t('jobo.makeTaskNotLinked') }); return; }
+    const before = joboRecords.find(record => record.id === linkDo.id) || null;
+    try {
+      const result = await recordJobo([next]);
+      if (result?.ok || result?.held) recordJoboUndo(before, next);
+      else setUndoToast({ message: t('jobo.makeTaskNotLinked') });
+    } catch (err) {
+      console.error('[jobo] link failed:', err);
+      setUndoToast({ message: t('jobo.makeTaskNotLinked') });
+    }
+  };
+
   const {
     setDeadline,
     postponeDeadlineTask,
@@ -6955,6 +6836,8 @@ const DayPlanner = () => {
     frameScheduleModal, setFrameScheduleModal,
     focusBlockTasks, setFocusBlockTasks,
     focusCompletedTasks, setFocusCompletedTasks,
+    isFocusSettlementPending: () => focusDoRef.current?.isPending(),
+    onTaskMadeFromDo: linkDoToNewTask,
     exitFocusModeRef,
     playFocusSound,
     getObsidianTaskMeta: obsidianConfig?.enabled && obsidianVaultHandleRef.current
@@ -7026,6 +6909,32 @@ const DayPlanner = () => {
       : null,
     addProject, goals,
   });
+  const focusDo = useFocusDo({
+    enabled: joboEnabled, loaded: joboLoaded, writable: joboWritable,
+    records: joboRecords, recordJobo,
+    resolveBlock: block => block.flatMap(original => {
+      const found = resolveTaskRef(original.id, { tasks, unscheduledTasks, recurringTasks, recycleBin });
+      if (!found || found.where === 'deleted' || found.task.completed) return [];
+      // getTasksForDate includes occurrence exceptions and duration, whereas
+      // the lightweight task-link resolver deliberately omits duration.
+      if (original.recurringTemplateId != null) {
+        return getTasksForDate(new Date(original.date + 'T12:00:00')).filter(task => task.id === original.id && !task.completed);
+      }
+      return [found.task];
+    }),
+    complete: actionId => {
+      const found = resolveTaskRef(actionId, { tasks, unscheduledTasks, recurringTasks, recycleBin });
+      if (!found || found.where === 'deleted' || found.task.completed || focusCompletedTasks.has(found.task.id)) return null;
+      return { allCompleted: focusCompleteTask(found.task.id, { exitWhenDone: false, fromSettlement: true }), completedActionId: found.task.id };
+    },
+  });
+  focusDoRef.current = focusDo;
+  const focusReviewId = focusDo.review?.capture.id;
+  useEffect(() => {
+    // A tray/Stream Deck stop can happen while the main window is hidden.
+    // Bring its existing Focus dialog forward for attribution, without a new wire format.
+    if (focusReviewId) window.electronAPI?.openMainAt?.({ action: 'focus-mode' });
+  }, [focusReviewId]);
   // Keep a stable ref so the foreground handler (defined earlier in the component)
   // can call openNewInboxTask without needing it in its closure.
   openNewInboxTaskRef.current = openNewInboxTask;
@@ -7982,7 +7891,7 @@ const DayPlanner = () => {
     defaultView, setDefaultView,
     hiddenViews, setViewHidden,
     dayViewMode, setDayViewMode,
-    dayViewColumns,
+    dayViewColumns, dayViewRollingPaused,
     weekViewMode, setWeekViewMode,
     weekViewDates,
 
@@ -8104,6 +8013,7 @@ const DayPlanner = () => {
     deadlinePickerTaskId, setDeadlinePickerTaskId,
     showRecurrencePicker, setShowRecurrencePicker,
     recurringDeleteConfirm, setRecurringDeleteConfirm,
+    recurringEditConfirm, setRecurringEditConfirm,
     editingRecurrenceTaskId, setEditingRecurrenceTaskId,
     showRecurrenceEndDatePicker, setShowRecurrenceEndDatePicker,
     showIncompleteTasks, setShowIncompleteTasks,
@@ -8163,6 +8073,7 @@ const DayPlanner = () => {
     // ── Undo / redo ───────────────────────────────────────────────────────────
     undoToast, setUndoToast,
     followUpTag, setFollowUpTag, openFollowUp,
+    openMakeTask: joboEnabled && joboWritable ? openMakeTask : null,
     joboFocus, setJoboFocus, openJoboAt,
 
     // ── Mobile editing ────────────────────────────────────────────────────────
@@ -8503,6 +8414,8 @@ const DayPlanner = () => {
     focusLog, setFocusLog,
     focusLogModalDate, setFocusLogModalDate,
     wakeLockSentinel, focusModeAvailable,
+    focusDoReview: focusDo.review, saveFocusDo: focusDo.save,
+    dismissFocusDo: focusDo.dismiss,
 
     // ── AI / Voice ────────────────────────────────────────────────────────────
     aiConfig, setAiConfig, aiSuppressed,
@@ -8910,6 +8823,7 @@ const DayPlanner = () => {
 
 
       <RecurringDeleteModal />
+      <RecurringEditModal />
 
       <EditRecurrenceModal />
 

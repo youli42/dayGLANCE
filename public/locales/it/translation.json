@@ -28,6 +28,7 @@
       "FORBIDDEN": "Sincronizzazione bloccata (403). Il tuo server potrebbe bloccare la richiesta.",
       "LOCKED": "La sincronizzazione è bloccata da un altro dispositivo. Riprova tra un momento.",
       "NETWORK_ERROR": "Errore di rete. Controlla la connessione e riprova.",
+      "SYNC_FAILED": "La sincronizzazione non è stata completata: {{detail}}. Verrà ritentata automaticamente.",
       "PASSPHRASE_REQUIRED": "Inserisci la tua passphrase di sincronizzazione per continuare.",
       "PRECONDITION_FAILED": "Un altro dispositivo ha aggiornato per primo. Nuovo tentativo.",
       "KEY_MISMATCH": "Passphrase di sincronizzazione errata. Deve corrispondere esattamente a quella usata sugli altri dispositivi.",
@@ -49,6 +50,10 @@
       "invalid": "Inserisci un URL del vault valido.",
       "httpRejected": "Connessione non sicura. Usa https:// per un vault sulla rete internet pubblica. Il semplice http:// è consentito solo su una rete locale attendibile (localhost o un indirizzo LAN).",
       "insecureLanWarning": "Connessione non cifrata: usala solo su una rete attendibile."
+    },
+    "webdavUrl": {
+      "insecureLanWarning": "Connessione non crittografata: la password viene inviata in chiaro. Usala solo su una rete attendibile.",
+      "insecurePublicWarning": "Connessione non crittografata su internet: password e dati vengono inviati in chiaro. Usa https://. L'app Android rifiuta questa connessione."
     },
     "form": {
       "webdavTitle": "Sincronizzazione WebDAV",
@@ -479,7 +484,7 @@
     "experimental": "Sperimentale",
     "experimentalHint": "Funzioni ancora in costruzione, in arrivo a tappe. Disattivate per impostazione predefinita; nulla cambia finché non ne attivi una.",
     "enableJobo": "Vista JOBO",
-    "enableJoboHint": "Pianificato contro effettivo. Una sesta vista, sul tasto 6, che registrerà ciò che è stato fatto rispetto a quanto pianificato.",
+    "enableJoboHint": "Pianificato contro effettivo. Una sesta vista, sul tasto 6, che registra ciò che è stato fatto rispetto a quanto pianificato.",
     "enableJoboHintPhone": "Piano contro realtà. Una vista nel selettore di viste della timeline che registra ciò che è stato fatto rispetto al piano.",
     "enableAspire": "Aspire",
     "enableAspireHint": "Pianificazione della vita: una lista dei desideri, una visione a cinque anni e motti. Per ora un segnaposto, aperto dallo spazio Obiettivi e progetti.",
@@ -860,7 +865,6 @@
     "schedule": "Pianifica",
     "dropToAllDay": "Trascina qui per tutto il giorno",
     "addTask": "Aggiungi attività",
-    "applyAssignmentTo": "Applica a",
     "assignmentEverybodyHint": "(vuoto = tutti)",
     "clearDeadline": "Cancella scadenza",
     "descriptionPlaceholder": "Aggiungi descrizione…",
@@ -963,6 +967,12 @@
     "deleteThisAndFutureHint": "Interrompi la ricorrenza dal {{date}} in poi",
     "deleteEntireSeries": "Elimina l'intera serie",
     "deleteEntireSeriesHint": "Rimuovi tutte le ricorrenze",
+    "editRecurring": "Modifica attività ricorrente",
+    "editRecurringMessage": "Applicare queste modifiche solo a questa ricorrenza o all'intera serie?",
+    "editThisOccurrence": "Questa ricorrenza",
+    "editThisOccurrenceHint": "Modifica solo il {{date}}",
+    "editAllOccurrences": "Tutte le ricorrenze",
+    "editAllOccurrencesHint": "Modifica ogni ricorrenza della serie",
     "editRecurrenceTitle": "Modifica ricorrenza",
     "convertToRegular": "Nessuna (converti in attività normale)",
     "emptyBinTitle": "Svuota cestino",
@@ -1185,7 +1195,20 @@
     "stop": "Interrompi",
     "skipPhase": "Salta fase",
     "startHyperGlance": "Avvia hyperGLANCE",
-    "tasksRemaining": "Attività rimanenti: {{count}}"
+    "tasksRemaining": "Attività rimanenti: {{count}}",
+    "doReview": {
+      "title": "Registra il lavoro concentrato",
+      "chooseTask": "A quale attività hai lavorato?",
+      "minutes": "{{minutes}} min da registrare",
+      "clockChanged": "L’orologio o il fuso orario è cambiato. Parte del lavoro non può essere registrata.",
+      "unavailable": "JOBO non è scrivibile. Riprova quando sarà pronto.",
+      "held": "Non ancora salvato. Nuovo tentativo in corso. Salva prima di completare l’attività.",
+      "failed": "Salvataggio non riuscito. Riprova.",
+      "completed": "Attività completata",
+      "inProgress": "Ancora in corso",
+      "dontRecord": "Non registrare",
+      "continueWithoutSaving": "Continua senza attendere"
+    }
   },
   "voice": {
     "title": "Input vocale",
@@ -1953,7 +1976,6 @@
     "recurring": "Ricorrenti",
     "recurringTasks": "Attività ricorrenti",
     "allInstances": "Tutte le occorrenze",
-    "thisInstance": "Questa occorrenza",
     "clearProjectFilter": "Rimuovi filtro progetto",
     "moreItems": "+{{count}} in più",
     "nextOnly": "Solo la prossima",
@@ -2256,6 +2278,9 @@
       "secondary": "Fini in ritardo: {{finish}} · Durato di più: {{longer}}"
     },
     "title": "JOBO",
+    "makeTask": "Crea attività",
+    "makeTaskHint": "Apre una nuova attività in arrivo da questa esecuzione e vi collega l'esecuzione.",
+    "makeTaskNotLinked": "Attività aggiunta. L'esecuzione è cambiata nel frattempo, quindi non è stata collegata.",
     "undo": {
       "changed": "Questo Do è cambiato nel frattempo, quindi è stato lasciato com'è.",
       "completionBlocked": "Il suo compito non è più completato, quindi il Do non può tornare Completato. È stato lasciato com'è.",

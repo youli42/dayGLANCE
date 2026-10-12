@@ -65,3 +65,47 @@ describe('locale coverage for the 1.10.0 engine codes', () => {
     expect(en.sync.errors.CREDENTIAL_INVALID).toMatch(/saved on this device/);
   });
 });
+
+// #2035: a code-less cycle error was always reported as NETWORK_ERROR, so a
+// local failure (IndexedDB, the apply path) told people to check a connection
+// that was fine.
+import { cycleErrorCode } from './syncErrors.js';
+
+describe('cycleErrorCode', () => {
+  it('keeps a string code the vault client or engine assigned', () => {
+    const err = Object.assign(new Error('get row failed: 500'), { code: 'VAULT_ERROR' });
+    expect(cycleErrorCode(err, new WeakSet())).toBe('VAULT_ERROR');
+  });
+
+  it('reports NETWORK_ERROR only for an error the transport threw', () => {
+    const transport = new WeakSet();
+    const offline = new TypeError('Failed to fetch');
+    transport.add(offline);
+    expect(cycleErrorCode(offline, transport)).toBe('NETWORK_ERROR');
+    // Re-wrapped by the package with the original on `cause`.
+    expect(cycleErrorCode(new Error('verifier: Failed to fetch', { cause: offline }), transport)).toBe('NETWORK_ERROR');
+  });
+
+  it('reports SYNC_FAILED for a local failure, not NETWORK_ERROR', () => {
+    expect(cycleErrorCode(new TypeError("Cannot read properties of undefined (reading 'id')"), new WeakSet())).toBe('SYNC_FAILED');
+    expect(cycleErrorCode('boom', new WeakSet())).toBe('SYNC_FAILED');
+    expect(cycleErrorCode(undefined, new WeakSet())).toBe('SYNC_FAILED');
+  });
+
+  it("ignores a DOMException's numeric legacy code", () => {
+    const quota = { name: 'QuotaExceededError', message: 'quota exceeded', code: 22 };
+    expect(cycleErrorCode(quota, new WeakSet())).toBe('SYNC_FAILED');
+  });
+});
+
+describe('SYNC_FAILED quotes the real message', () => {
+  const realT = (bundle) => (key, opts = {}) => {
+    const v = key.split('.').reduce((o, k) => o?.[k], bundle);
+    return typeof v === 'string' ? v.replace(/\{\{(\w+)\}\}/g, (_, k) => opts[k] ?? '') : opts.defaultValue;
+  };
+  it('interpolates the engine message into the localized string', () => {
+    expect(syncErrorText(realT(en), 'snapshot write failed', 'SYNC_FAILED'))
+      .toBe("Sync didn't finish: snapshot write failed. It will try again automatically.");
+    expect(syncErrorText(realT(fr), 'snapshot write failed', 'SYNC_FAILED')).toContain('snapshot write failed');
+  });
+});

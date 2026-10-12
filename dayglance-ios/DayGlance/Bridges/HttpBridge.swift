@@ -9,7 +9,8 @@ import Foundation
 /// CORS restrictions — the same reason Android's HttpBridge exists.
 ///
 /// Blocks the calling thread via DispatchSemaphore; only call from a
-/// background thread (WKURLSchemeHandler callbacks satisfy this).
+/// background thread. WKURLSchemeHandler callbacks run on the MAIN thread, so
+/// BridgeSchemeHandler hands httpRequest to a background queue (#2048).
 final class HttpBridge {
 
     static let shared = HttpBridge()

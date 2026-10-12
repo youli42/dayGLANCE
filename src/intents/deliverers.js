@@ -40,6 +40,8 @@ import { HELD_NO_KEY_REASON } from './outbox.js';
 import { intentsClientFor } from './dbIntentsTransport.js';
 import { directAccessTransport, directAccessEncryptsWrites } from '../sync/directAccessTransport.js';
 import { isDirectAccessIntentsEnabled } from './directAccessIntentsConfig.js';
+import { resolveDirectAccessIntentsKey } from './directAccessIntentsKey.js';
+import { fetchRootSaltB64 } from './intentsEncryptionSetup.js';
 import { publishOwnEvent, retentionMsFrom } from './folderIntents.js';
 
 export const DELIVERED = 'delivered';
@@ -207,12 +209,17 @@ export async function webdavDeliverer(intent, opts = {}) {
 // ─── 3. ICLOUD deliverer — mirrors WebDAV over the iCloud write path ──────────
 
 /**
- * Deliver one intent to the iCloud file tier, same encryption policy as WebDAV.
- * iCloud has no HTTP status: a write either succeeds or doesn't, and both
- * "unavailable" and "write failed" are retryable → 'transient'.
+ * Deliver one intent to the iCloud event directory (useIntentPoller.js
+ * writeEventFileICloud). Always plaintext: iCloud Drive is encrypted by Apple
+ * at rest and in transit, the iCloud snapshot transport writes plaintext for
+ * the same reason, and the iCloud poll on every receiver refuses an encrypted
+ * envelope as a misconfigured sender (`encrypted_on_icloud`). This deliverer
+ * used to build its envelope under the WebDAV intents config's encryption
+ * flag, so a device with WebDAV encryption on sealed every iCloud intent and
+ * every iCloud receiver skipped it. Held (transient) while iCloud is away.
  *
  * @param {object} intent
- * @param {object} [opts] - test seams (config, loadWebdavKey, isAvailable, writeEventFileICloud)
+ * @param {object} [opts] - test seams (isAvailable, writeEventFileICloud, config)
  * @returns {Promise<'delivered'|'transient'|'permanent'>}
  */
 export async function icloudDeliverer(intent, opts = {}) {
@@ -221,13 +228,12 @@ export async function icloudDeliverer(intent, opts = {}) {
   if (!isAvailable()) return TRANSIENT;
 
   const config = opts.config ?? readIntentConfig();
-  const built = await buildFileTierEnvelope(intent, config, opts);
-  if (built.hold) return TRANSIENT; // encryption on, key not ready yet
+  const envelope = buildEnvelope(toEnvelopeParams(intent));
 
   const write = opts.writeEventFileICloud ?? writeEventFileICloud;
   let ok;
   try {
-    ok = await write(config, built.envelope);
+    ok = await write(config, envelope);
   } catch (err) {
     console.warn('[deliver/icloud] write error:', err?.message);
     return TRANSIENT;
@@ -239,15 +245,18 @@ export async function icloudDeliverer(intent, opts = {}) {
 
 /**
  * Deliver one intent to the Direct Access event set (intents/folderIntents.js).
- * Encrypted iff the Direct Access "encrypt the file" switch is on, with the
- * WebDAV intents root key; held (HELD_NO_KEY_REASON) while that key is not
- * ready, never sent plaintext. Held too while the opt-in is off or no folder
- * is connected or reachable: both may change. Delivered once the file has
- * been read back with the event in it; the device's ledger keeps the event
- * until retention so a copy of the file that loses it gets it back.
+ * Encrypted iff the Direct Access "encrypt the file" switch is on, under the
+ * root key for the salt the event set names (intents/directAccessIntentsKey.js):
+ * the file's salt, else the one this device brings, with the key derived
+ * from the sync passphrase. Held (HELD_NO_KEY_REASON) while no passphrase is
+ * in memory and no cached key matches, never sent plaintext. Held too while
+ * the opt-in is off or no folder is connected or reachable: both may change.
+ * Delivered once the file has been read back with the event in it; the
+ * device's ledger keeps the event until retention so a copy of the file that
+ * loses it gets it back.
  *
  * @param {object} intent
- * @param {object} [opts] - test seams (transport, isEnabled, encrypts, loadWebdavKey, publish, storage, now, config)
+ * @param {object} [opts] - test seams (transport, isEnabled, encrypts, resolveKey, publish, storage, now, config)
  * @returns {Promise<'delivered'|'transient'|'permanent'|{status, reason}>}
  */
 export async function directAccessDeliverer(intent, opts = {}) {
@@ -256,16 +265,26 @@ export async function directAccessDeliverer(intent, opts = {}) {
   if (!enabled()) return TRANSIENT;
   if (!transport.isAvailable()) return TRANSIENT;
 
-  const encrypts = opts.encrypts ?? directAccessEncryptsWrites;
-  const built = await buildFileTierEnvelope(intent, { encryptionEnabled: !!encrypts() }, opts);
-  if (built.hold) return { status: TRANSIENT, reason: HELD_NO_KEY_REASON };
-
   const config = opts.config ?? readIntentConfig();
   const storage = opts.storage ?? (typeof localStorage !== 'undefined' ? localStorage : null);
+  const encrypts = opts.encrypts ?? directAccessEncryptsWrites;
+  let envelope;
+  let salt = null;
+  if (encrypts()) {
+    const resolve = opts.resolveKey ?? resolveDirectAccessIntentsKey;
+    const webdavConfigured = !!(config?.webdavUrl && config?.username && config?.appPassword);
+    const r = await resolve({ transport, eventsPath: config?.eventsPath, storage, webdavSalt: () => (webdavConfigured ? fetchRootSaltB64(config) : null) });
+    if (!r?.key) return { status: TRANSIENT, reason: HELD_NO_KEY_REASON };
+    salt = r.salt;
+    envelope = await buildEncryptedEnvelope(toEnvelopeParams(intent), (s) => deriveEnvelopeKey(r.key, s));
+  } else {
+    envelope = buildEnvelope(toEnvelopeParams(intent));
+  }
+
   const publish = opts.publish ?? publishOwnEvent;
   try {
-    const ok = await publish(transport, built.envelope, {
-      storage, now: opts.now, eventsPath: config?.eventsPath, retentionMs: opts.retentionMs ?? retentionMsFrom(storage),
+    const ok = await publish(transport, envelope, {
+      storage, now: opts.now, eventsPath: config?.eventsPath, retentionMs: opts.retentionMs ?? retentionMsFrom(storage), salt,
     });
     return ok ? DELIVERED : TRANSIENT;
   } catch (err) {

@@ -167,6 +167,32 @@ export function updateDoRecord(record, patch, updatedAt) {
   return createDoRecord({ ...next, updatedAt });
 }
 
+/** Whether `record` may be linked to a task: an unlinked manual Do, not deleted, not completed. */
+export function canLinkDo(record) {
+  return !!record && !record.deleted && record.source === 'manual' && record.taskId === null
+    && record.progress !== DO_PROGRESS.COMPLETED;
+}
+
+/**
+ * Link an unlinked manual Do to a task made from it ("Make a task").
+ * The one exception to taskId being captured: a Do that had no task gains
+ * one, as a newer version. Its title, interval, progress and planSnapshot
+ * stay as recorded, so work done before the task existed still reads as
+ * unplanned, and a null snapshot keeps it its own execution group in the
+ * Check: the link gives it the task's context, not the task's sessions.
+ * Only an unlinked Do can be linked; ordinary edits never rebind taskId
+ * (updateDoRecord refuses it). Undo writes the unlinked version back as a
+ * newer one, which can then be linked again. A completed one has nothing
+ * left to make (a linked manual Do cannot be completed).
+ */
+export function linkDoRecord(record, taskId, updatedAt) {
+  assertRecord(record);
+  if (taskId === null || !taskIdValid(taskId)) throw new TypeError('taskId must be an id');
+  if (!canLinkDo(record)) throw new TypeError('Only an unlinked manual Do that is not completed can be linked');
+  assertLater(record, updatedAt);
+  return createDoRecord({ ...record, taskId, updatedAt });
+}
+
 /** An explicit deletion is a newer version, never removal from the collection. */
 export function tombstoneDoRecord(record, updatedAt) {
   assertRecord(record);

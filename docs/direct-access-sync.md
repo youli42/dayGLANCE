@@ -480,11 +480,20 @@ as written: the union merge, the sender ledger, the cursor, GC as the merge
 under the relay rule, the deliverer that reports delivered once the file has
 been read back, the opt-in beside the iCloud and GLANCEvault ones, the
 iPhone's third bookmarked file (**Choose events file… / Create events
-file…**, seeded with an empty set). Encryption: an envelope is sealed with
-the WebDAV intents root key when the Direct Access encrypt switch is on, and
-held in the outbox (`intents_key_not_ready`) while that key is absent; a
-device receiving a sealed envelope without the key logs `no_root_key` and
-moves on, as the WebDAV loop does. Tests: `folderIntents.test.js`,
+file…**, seeded with an empty set). Encryption: an envelope is sealed under
+the root key for the salt the event set names when the Direct Access encrypt
+switch is on. The salt travels IN the file header (`salt`, base64), since a
+folder-only device can never reach the WebDAV salt file and an iPhone holds
+a bookmark to the event set alone: once a file names one, every writer keeps
+it; a sender that finds none brings the one it seeded before, else the WebDAV
+salt when this device also runs WebDAV intents (so the key it already holds
+is the folder's key), else a fresh one (`intents/directAccessIntentsKey.js`).
+The key is derived from the sync passphrase and cached with its salt; an
+intent is held in the outbox (`intents_key_not_ready`) while no passphrase is
+in memory and no cached key matches, and the opt-in asks for the passphrase
+once in that case. A device receiving a sealed envelope derives the key for
+the file's salt, falls back to the WebDAV key for a file sealed before the
+salt travelled, and logs `no_root_key` and moves on without either. Tests: `folderIntents.test.js`,
 `useDirectAccessIntents.test.js`, `directAccessIntentsConfig.test.js`, the
 Direct Access rows in `deliverers.test.js` and `emitTargets.test.js`, the
 events slot in `directAccessTransport.test.js` and

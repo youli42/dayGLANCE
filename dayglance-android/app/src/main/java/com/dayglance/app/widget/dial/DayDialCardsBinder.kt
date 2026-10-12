@@ -38,8 +38,11 @@ internal object DayDialCardsBinder {
         DialLegendKey.FRAMES to (R.id.ll_day_dial_legend_frames to R.id.tv_day_dial_legend_frames_value),
     )
 
-    private val TEXT_ON = Color.argb((0.90 * 255).toInt(), 255, 255, 255)
-    private val TEXT_DONE = Color.argb((0.40 * 255).toInt(), 255, 255, 255)
+    // Lazy: this object also loads in JVM unit tests (legendValue is pure), where
+    // android.graphics.Color is an unmocked stub that throws, and an eager
+    // Color.argb here failed the whole object's initializer.
+    private val TEXT_ON by lazy { Color.argb((0.90 * 255).toInt(), 255, 255, 255) }
+    private val TEXT_DONE by lazy { Color.argb((0.40 * 255).toInt(), 255, 255, 255) }
 
     /** How many chips a placement's layout carries. */
     fun chipsIn(placement: DialPlacement): Int = when (placement) {

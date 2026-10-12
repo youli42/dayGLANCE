@@ -28,6 +28,7 @@
       "FORBIDDEN": "Sincronização bloqueada (403). Seu servidor pode estar bloqueando a solicitação.",
       "LOCKED": "A sincronização está bloqueada por outro dispositivo. Tente novamente dentro de momentos.",
       "NETWORK_ERROR": "Erro de rede. Verifique sua conexão e tente novamente.",
+      "SYNC_FAILED": "A sincronização não foi concluída: {{detail}}. Ela será tentada novamente de forma automática.",
       "PASSPHRASE_REQUIRED": "Digite sua frase de sincronização para continuar.",
       "PRECONDITION_FAILED": "Outro dispositivo atualizou primeiro. A tentar novamente.",
       "KEY_MISMATCH": "Frase de sincronização incorreta. Deve corresponder exatamente à usada nos seus outros dispositivos.",
@@ -49,6 +50,10 @@
       "invalid": "Digite um URL de vault válido.",
       "httpRejected": "Conexão não segura. Use https:// para um vault na internet pública. O http:// simples só é permitido numa rede local de confiança (localhost ou um endereço LAN).",
       "insecureLanWarning": "Conexão não criptografada: use apenas numa rede de confiança."
+    },
+    "webdavUrl": {
+      "insecureLanWarning": "Conexão sem criptografia: sua senha é enviada em texto simples. Use apenas em uma rede confiável.",
+      "insecurePublicWarning": "Conexão sem criptografia pela internet: sua senha e seus dados são enviados em texto simples. Use https://. O app Android recusa esta conexão."
     },
     "form": {
       "webdavTitle": "Sincronização WebDAV",
@@ -479,7 +484,7 @@
     "experimental": "Experimental",
     "experimentalHint": "Recursos ainda em construção, chegando em partes. Desativados por padrão; nada muda a menos que você ative um.",
     "enableJobo": "Visão JOBO",
-    "enableJoboHint": "Planejado versus realizado. Uma sexta visão, na tecla 6, que registrará o que foi feito em relação ao planejado.",
+    "enableJoboHint": "Planejado versus realizado. Uma sexta visão, na tecla 6, que registra o que foi feito em relação ao planejado.",
     "enableJoboHintPhone": "Plano versus realidade. Uma visão no seletor de visões da linha do tempo que registra o que foi feito em relação ao planejado.",
     "enableAspire": "Aspire",
     "enableAspireHint": "Planejamento de vida: uma lista de desejos, uma visão de cinco anos e lemas. Por enquanto um espaço reservado, aberto a partir do espaço Objetivos e projetos.",
@@ -860,7 +865,6 @@
     "schedule": "Agendar",
     "dropToAllDay": "Largar aqui para dia inteiro",
     "addTask": "Adicionar tarefa",
-    "applyAssignmentTo": "Aplicar a",
     "assignmentEverybodyHint": "(vazio = todos)",
     "clearDeadline": "Remover prazo",
     "descriptionPlaceholder": "Adicionar descrição…",
@@ -961,6 +965,12 @@
     "deleteThisAndFutureHint": "Parar de repetir a partir de {{date}}",
     "deleteEntireSeries": "Excluir toda a série",
     "deleteEntireSeriesHint": "Remover todas as ocorrências",
+    "editRecurring": "Editar tarefa recorrente",
+    "editRecurringMessage": "Aplicar estas alterações apenas a esta ocorrência ou a toda a série?",
+    "editThisOccurrence": "Esta ocorrência",
+    "editThisOccurrenceHint": "Alterar apenas {{date}}",
+    "editAllOccurrences": "Todas as ocorrências",
+    "editAllOccurrencesHint": "Alterar todas as ocorrências da série",
     "editRecurrenceTitle": "Editar recorrência",
     "convertToRegular": "Nenhuma (converter em tarefa normal)",
     "emptyBinTitle": "Esvaziar reciclagem",
@@ -1183,7 +1193,20 @@
     "stop": "Parar",
     "skipPhase": "Pular fase",
     "startHyperGlance": "Iniciar hyperGLANCE",
-    "tasksRemaining": "Tarefas (restantes: {{count}})"
+    "tasksRemaining": "Tarefas (restantes: {{count}})",
+    "doReview": {
+      "title": "Registrar trabalho focado",
+      "chooseTask": "Em qual tarefa você trabalhou?",
+      "minutes": "{{minutes}} min para registrar",
+      "clockChanged": "O relógio ou o fuso horário mudou. Parte do trabalho não pode ser registrada.",
+      "unavailable": "Não é possível gravar no JOBO. Tente quando estiver disponível.",
+      "held": "Ainda não foi salvo. Tentando novamente. Salve antes de concluir a tarefa.",
+      "failed": "Não foi possível salvar. Tente novamente.",
+      "completed": "Tarefa concluída",
+      "inProgress": "Ainda em andamento",
+      "dontRecord": "Não registrar",
+      "continueWithoutSaving": "Continuar sem esperar"
+    }
   },
   "voice": {
     "title": "Entrada de voz",
@@ -1951,7 +1974,6 @@
     "recurring": "Recorrentes",
     "recurringTasks": "Tarefas recorrentes",
     "allInstances": "Todas as ocorrências",
-    "thisInstance": "Esta ocorrência",
     "clearProjectFilter": "Remover filtro de projeto",
     "moreItems": "+{{count}} a mais",
     "nextOnly": "Só a próxima",
@@ -2254,6 +2276,9 @@
       "secondary": "Finais tardios: {{finish}} · Demorou mais: {{longer}}"
     },
     "title": "JOBO",
+    "makeTask": "Criar tarefa",
+    "makeTaskHint": "Abre uma nova tarefa na caixa de entrada a partir desta execução e a vincula à tarefa.",
+    "makeTaskNotLinked": "Tarefa adicionada. A execução mudou nesse meio-tempo, então não foi vinculada.",
     "undo": {
       "changed": "Este Do mudou desde então, então foi mantido como está.",
       "completionBlocked": "A tarefa não está mais concluída, então o Do não pode voltar a Concluído. Foi mantido como está.",

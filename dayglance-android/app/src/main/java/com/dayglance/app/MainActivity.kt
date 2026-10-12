@@ -90,7 +90,9 @@ class MainActivity : AppCompatActivity() {
     // Splash screen: held until all three conditions are true:
     //   1. WebView has finished its first page load (webViewReady)
     //   2. JS has signalled the app is interactive — i.e. the initial Obsidian
-    //      sync (which blocks the JS thread) has completed (appReady).
+    //      sync has completed (appReady). Native HTTP no longer blocks the JS
+    //      thread (httpRequestAsync, #2048), so a slow sync server can't hold
+    //      the UI once the splash is down.
     //      A fallback timer sets appReady after 10 s in case JS never calls back.
     //   3. Billing client has completed its first queryPurchases() so the
     //      subscription cache is current before the WebView reads it (billingReady).
@@ -299,6 +301,19 @@ class MainActivity : AppCompatActivity() {
             },
             onStopVaultSse = {
                 vaultSseClient.disable()
+            },
+            // Async HTTP results (#2048). Same delivery as the SSE frameSink: the
+            // message is JSON built with org.json, so it is also a valid JS object
+            // literal, with no injection risk. Hops to the main thread because
+            // evaluateJavascript must run there; the request itself ran on
+            // HttpBridge's worker pool, never on the WebView's JS thread.
+            onHttpResult = { json ->
+                webView.post {
+                    webView.evaluateJavascript(
+                        "window.__dgNativeHttpDone && window.__dgNativeHttpDone($json)",
+                        null
+                    )
+                }
             }
         )
 

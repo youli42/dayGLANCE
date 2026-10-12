@@ -92,6 +92,7 @@ import { recordOwnWriteSeq } from '../sync/ownWrites.js';
 // treat that throw as the quiet sit-out it is — the client's arming line
 // already reported the incident once.
 import { createVaultClient } from '@glance-apps/sync';
+import { nativeHttpRequest } from '../native.js';
 
 // Module-level lock: prevents React StrictMode's double-mount from running two
 // concurrent polls, which would both read the same cursor and double-process.
@@ -151,10 +152,10 @@ export function defaultVaultFetch() {
     : null;
 
   if (isNativeApp) {
-    // The native bridge is synchronous and returns a JSON string.
+    // Async on every shell that supports it (native.js, #2048).
     return async (method, url, headers, body) => {
       let r;
-      try { r = JSON.parse(bridge.httpRequest(method, url, JSON.stringify(headers), body ?? '')); }
+      try { r = await nativeHttpRequest(method, url, headers, body ?? ''); }
       catch { throw new TypeError('Failed to fetch'); }
       if (!r) throw new TypeError('Failed to fetch');
       return r;

@@ -28,6 +28,7 @@
       "FORBIDDEN": "Sincronização bloqueada (403). O seu servidor pode estar a bloquear o pedido.",
       "LOCKED": "A sincronização está bloqueada por outro dispositivo. Tente novamente dentro de momentos.",
       "NETWORK_ERROR": "Erro de rede. Verifique a sua ligação e tente novamente.",
+      "SYNC_FAILED": "A sincronização não foi concluída: {{detail}}. Será tentada novamente de forma automática.",
       "PASSPHRASE_REQUIRED": "Introduza a sua frase-passe de sincronização para continuar.",
       "PRECONDITION_FAILED": "Outro dispositivo atualizou primeiro. A tentar novamente.",
       "KEY_MISMATCH": "Frase-passe de sincronização incorreta. Tem de corresponder exatamente à usada nos seus outros dispositivos.",
@@ -49,6 +50,10 @@
       "invalid": "Introduza um URL de vault válido.",
       "httpRejected": "Ligação não segura. Utilize https:// para um vault na internet pública. O http:// simples só é permitido numa rede local de confiança (localhost ou um endereço LAN).",
       "insecureLanWarning": "Ligação não encriptada: utilize apenas numa rede de confiança."
+    },
+    "webdavUrl": {
+      "insecureLanWarning": "Ligação sem encriptação: a sua palavra-passe é enviada em texto simples. Utilize apenas numa rede de confiança.",
+      "insecurePublicWarning": "Ligação sem encriptação pela internet: a sua palavra-passe e os seus dados são enviados em texto simples. Utilize https://. A app Android recusa esta ligação."
     },
     "form": {
       "webdavTitle": "Sincronização WebDAV",
@@ -479,7 +484,7 @@
     "experimental": "Experimental",
     "experimentalHint": "Funcionalidades ainda em construção, a chegar por partes. Desativadas por omissão; nada muda a menos que ative uma.",
     "enableJobo": "Vista JOBO",
-    "enableJoboHint": "Planeado versus realizado. Uma sexta vista, na tecla 6, que registará o que foi feito face ao planeado.",
+    "enableJoboHint": "Planeado versus realizado. Uma sexta vista, na tecla 6, que regista o que foi feito face ao planeado.",
     "enableJoboHintPhone": "Plano versus realidade. Uma vista no seletor de vistas da linha temporal que regista o que foi feito face ao planeado.",
     "enableAspire": "Aspire",
     "enableAspireHint": "Planeamento de vida: uma lista de desejos, uma visão a cinco anos e lemas. Por agora um espaço reservado, aberto a partir do espaço Objetivos e projetos.",
@@ -860,7 +865,6 @@
     "schedule": "Agendar",
     "dropToAllDay": "Largar aqui para dia inteiro",
     "addTask": "Adicionar tarefa",
-    "applyAssignmentTo": "Aplicar a",
     "assignmentEverybodyHint": "(vazio = todos)",
     "clearDeadline": "Remover prazo",
     "descriptionPlaceholder": "Adicionar descrição…",
@@ -961,6 +965,12 @@
     "deleteThisAndFutureHint": "Parar de repetir a partir de {{date}}",
     "deleteEntireSeries": "Eliminar toda a série",
     "deleteEntireSeriesHint": "Remover todas as ocorrências",
+    "editRecurring": "Editar tarefa recorrente",
+    "editRecurringMessage": "Aplicar estas alterações apenas a esta ocorrência ou a toda a série?",
+    "editThisOccurrence": "Esta ocorrência",
+    "editThisOccurrenceHint": "Alterar apenas {{date}}",
+    "editAllOccurrences": "Todas as ocorrências",
+    "editAllOccurrencesHint": "Alterar todas as ocorrências da série",
     "editRecurrenceTitle": "Editar recorrência",
     "convertToRegular": "Nenhuma (converter em tarefa normal)",
     "emptyBinTitle": "Esvaziar reciclagem",
@@ -1183,7 +1193,20 @@
     "stop": "Parar",
     "skipPhase": "Saltar fase",
     "startHyperGlance": "Iniciar hyperGLANCE",
-    "tasksRemaining": "Tarefas (restantes: {{count}})"
+    "tasksRemaining": "Tarefas (restantes: {{count}})",
+    "doReview": {
+      "title": "Registar trabalho focado",
+      "chooseTask": "Em que tarefa trabalhaste?",
+      "minutes": "{{minutes}} min para registar",
+      "clockChanged": "O relógio ou o fuso horário mudou. Parte do trabalho não pode ser registada.",
+      "unavailable": "Não é possível escrever no JOBO. Tenta quando estiver disponível.",
+      "held": "Ainda não foi guardado. Nova tentativa em curso. Guarda antes de concluir a tarefa.",
+      "failed": "Não foi possível guardar. Tenta novamente.",
+      "completed": "Tarefa concluída",
+      "inProgress": "Ainda em curso",
+      "dontRecord": "Não registar",
+      "continueWithoutSaving": "Continuar sem esperar"
+    }
   },
   "voice": {
     "title": "Entrada de voz",
@@ -1951,7 +1974,6 @@
     "recurring": "Recorrentes",
     "recurringTasks": "Tarefas recorrentes",
     "allInstances": "Todas as ocorrências",
-    "thisInstance": "Esta ocorrência",
     "clearProjectFilter": "Remover filtro de projeto",
     "moreItems": "+{{count}} mais",
     "nextOnly": "Só a próxima",
@@ -2254,6 +2276,9 @@
       "secondary": "Finais tardios: {{finish}} · Demorou mais: {{longer}}"
     },
     "title": "JOBO",
+    "makeTask": "Criar tarefa",
+    "makeTaskHint": "Abre uma nova tarefa na caixa de entrada a partir desta execução e associa-a à tarefa.",
+    "makeTaskNotLinked": "Tarefa adicionada. A execução mudou entretanto, por isso não foi associada.",
     "undo": {
       "changed": "Este Do mudou entretanto, por isso foi mantido como está.",
       "completionBlocked": "A tarefa já não está concluída, por isso o Do não pode voltar a Concluído. Foi mantido como está.",

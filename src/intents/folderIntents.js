@@ -8,7 +8,7 @@
  * this transport is built on the one primitive every platform has, a single
  * file, and is the same on desktop, Android and iPhone:
  *
- *   GLANCE/events/glance-events.json = { version: 1, events: [envelope, …] }
+ *   GLANCE/events/glance-events.json = { version: 1, writtenBy?, salt?, events: [envelope, …] }
  *
  * holding every live envelope, plaintext or encrypted exactly as the WebDAV
  * transport builds them. The file is a SET keyed by event_id:
@@ -25,6 +25,9 @@
  *   • A receiver reads, never writes for what it read: it handles the
  *     envelopes above its cursor that it did not emit, and advances the
  *     cursor, exactly as the directory loops do over a listing.
+ *   • The salt the encrypted envelopes' root key is derived from travels in
+ *     the header (intents/directAccessIntentsKey.js): once a file names one,
+ *     every writer keeps it, and a receiver derives its key from it.
  *   • Garbage collection is the merge: expired envelopes fall out of the
  *     union, and the device that drops them writes only under the relay rule
  *     (sync/snapshotFileSync.js relayDecision), so an idle fleet does not take
@@ -41,6 +44,7 @@ import {
 } from '@glance-apps/intents';
 import { classifySnapshotText, relayDecision, relayWaitMs, noteWriter } from '../sync/snapshotFileSync.js';
 import { loadIntentsRootKey } from './intentsKeyStore.js';
+import { keyForSalt } from './directAccessIntentsKey.js';
 import { handleIntent as defaultHandleIntent } from './handleIntent.js';
 import { logActivity as defaultLogActivity } from './intentLog.js';
 import { INTENT_CONFIG_KEY, MULTI_USER_CONFIG_KEY } from './useIntentPoller.js';
@@ -108,8 +112,8 @@ export function mergeEventSets(a, b, { now, retentionMs }) {
 
 /** What a write would change: the ids, in order. */
 export const eventSetKey = (events) => events.map((e) => e.event_id).join('\n');
-export const serializeEventSet = (events, writtenBy = null) =>
-  JSON.stringify(writtenBy ? { version: 1, writtenBy, events } : { version: 1, events });
+export const serializeEventSet = (events, writtenBy = null, salt = null) =>
+  JSON.stringify({ version: 1, ...(writtenBy ? { writtenBy } : {}), ...(salt ? { salt } : {}), events });
 
 /**
  * The file's text as the cycle reads it: the snapshot classification (absent,
@@ -121,7 +125,11 @@ export function parseEventSetText(text) {
   if (read.kind !== 'snapshot') return read;
   const events = read.remote?.events;
   if (!Array.isArray(events)) return { kind: 'no-data' };
-  return { kind: 'set', events, writtenBy: typeof read.remote.writtenBy === 'string' ? read.remote.writtenBy : null };
+  return {
+    kind: 'set', events,
+    writtenBy: typeof read.remote.writtenBy === 'string' ? read.remote.writtenBy : null,
+    salt: typeof read.remote.salt === 'string' && read.remote.salt ? read.remote.salt : null,
+  };
 }
 
 // ─── the ledger and the cursor ───────────────────────────────────────────────
@@ -178,17 +186,21 @@ const logSkip = (log, status, error) => log({
 
 /**
  * Handles one raw envelope from the set the way the WebDAV loop handles one
- * file: never this app's own; an encrypted one through the WebDAV intents
- * root key (none → logged, skipped); the multi-user visibility filter; then
- * handleIntent, with the outcome in the activity log. Never throws for a bad
- * envelope: the cycle advances the cursor past it either way.
+ * file: never this app's own; an encrypted one through the key for the salt
+ * the file names (`deps.salt`), falling back to the WebDAV intents root key
+ * for a file sealed before the salt travelled (none → logged, skipped); the
+ * multi-user visibility filter; then handleIntent, with the outcome in the
+ * activity log. Never throws for a bad envelope: the cycle advances the
+ * cursor past it either way.
  *
  * @returns {Promise<{handled: boolean, skipped?: string, success?: boolean}>}
  */
 export async function receiveEnvelope(raw, context, deps = {}) {
   const handle = deps.handleIntent ?? defaultHandleIntent;
   const log = deps.logActivity ?? defaultLogActivity;
-  const loadKey = deps.loadKey ?? loadIntentsRootKey;
+  const loadLegacyKey = deps.loadKey ?? loadIntentsRootKey;
+  const loadSaltKey = deps.loadKeyForSalt ?? keyForSalt;
+  const loadKey = async () => (deps.salt ? await loadSaltKey(deps.salt) : null) ?? await loadLegacyKey();
   const storage = deps.storage ?? defaultStorage();
 
   if (raw?.emitted_by === SELF) return { handled: false, skipped: 'own' };
@@ -273,7 +285,8 @@ export async function receiveEnvelope(raw, context, deps = {}) {
  * @param {Storage} [args.io.storage]
  * @param {number} [args.io.retentionMs]
  * @param {string} [args.io.eventsPath]   the WebDAV-style events directory ('/GLANCE/events/')
- * @param {(raw: object) => Promise<void>} [args.io.receive]  absent: a sender-only cycle (the deliverer), no cursor moves
+ * @param {(raw: object, meta: {salt: string|null}) => Promise<void>} [args.io.receive]  absent: a sender-only cycle (the deliverer), no cursor moves
+ * @param {string|null} [args.io.salt]  the salt a sender brings when the file names none (directAccessIntentsKey.js); the file's own always wins
  * @param {string|(() => string)} [args.io.deviceId]  stamped as `writtenBy`; ranks this device's relay (sync/snapshotFileSync.js relayWaitMs)
  * @param {string} [args.io.writersKey]  where the writers seen are kept (default: the snapshot cycle's key for this transport, so the fleet is ranked once)
  * @param {() => number} [args.io.now]
@@ -282,7 +295,8 @@ export async function receiveEnvelope(raw, context, deps = {}) {
  * @returns {Promise<{state: object, outcome: object}>}
  *   outcome.kind: 'skipped' (reason: 'unsupported' | 'downloading' | 'unparseable' | 'no-data')
  *                 'error'   (reason: 'unavailable', error)
- *                 'merged'  (received, wrote, deferred, own, confirmed: string[], dropped)
+ *                 'merged'  (received, wrote, deferred, own, confirmed: string[], dropped, salt, keyNeeded)
+ *                 keyNeeded: an envelope above the cursor is sealed under a key this device lacks; the cursor waits in front of it
  *                 own: an event of this device's was missing from the file
  *                 confirmed: this device's ledger events the file already held
  */
@@ -299,6 +313,7 @@ export async function runEventSetCycle({ transport, io = {}, state }) {
   if (read.kind === 'error') return { state: next, outcome: { kind: 'error', reason: 'unavailable', error: read.error } };
   if (read.kind !== 'set' && read.kind !== 'absent') return { state: next, outcome: { kind: 'skipped', reason: read.kind } };
   const fileEvents = read.kind === 'absent' ? [] : read.events;
+  const salt = (read.kind === 'set' && read.salt) || io.salt || null;
   const deviceId = (() => {
     try { const v = typeof io.deviceId === 'function' ? io.deviceId() : io.deviceId; return typeof v === 'string' && v ? v : null; }
     catch { return null; }
@@ -312,14 +327,22 @@ export async function runEventSetCycle({ transport, io = {}, state }) {
 
   // Receive: above the cursor, not ours, in id order; the cursor moves past
   // every envelope looked at, handled or not, as the directory loops do.
+  // An encrypted envelope this device has no key for is NOT skipped past: the
+  // cursor stops in front of it and the caller is told a key is needed, so the
+  // event is handled once the passphrase has been entered rather than lost
+  // (a receiver that enabled intents before the file named its salt holds a
+  // key for another salt until then).
   let received = 0;
+  let keyNeeded = false;
   if (typeof io.receive === 'function') {
     const cursor = getCursor(storage);
     for (const e of merged) {
       if (cursor && e.event_id <= cursor) continue;
       if (e.emitted_by !== SELF) {
-        try { await io.receive(e); received++; }
+        let r = null;
+        try { r = await io.receive(e, { salt }); received++; }
         catch (err) { log.warn(`[${transport.id ?? 'direct-access'}] intent handling failed:`, err?.message ?? err); }
+        if (r && r.handled === false && r.skipped === 'no_root_key') { keyNeeded = true; received--; break; }
       }
       setCursor(storage, e.event_id);
     }
@@ -334,7 +357,7 @@ export async function runEventSetCycle({ transport, io = {}, state }) {
   const throttledWrite = async () => {
     if (now() - next.lastWriteAt < (transport.writeThrottleMs ?? 0)) return false;
     next.lastWriteAt = now();
-    const ok = await transport.eventsWrite(relPath, serializeEventSet(merged, deviceId));
+    const ok = await transport.eventsWrite(relPath, serializeEventSet(merged, deviceId, salt));
     if (!ok) log.error(`[${transport.id ?? 'direct-access'}] event set write failed`);
     return ok;
   };
@@ -352,7 +375,7 @@ export async function runEventSetCycle({ transport, io = {}, state }) {
     next.pendingWrite = null;
   }
   const dropped = fileEvents.length - merged.filter((e) => fileIds.has(e.event_id)).length;
-  return { state: next, outcome: { kind: 'merged', received, wrote, deferred, own: ownMissing, confirmed, dropped } };
+  return { state: next, outcome: { kind: 'merged', received, wrote, deferred, own: ownMissing, confirmed, dropped, salt, keyNeeded } };
 }
 
 // One cycle at a time per process: the deliverer's sender cycle and the

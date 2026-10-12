@@ -46,3 +46,31 @@ export function weekViewDatesFor({ viewMode, selectedDate, weekViewMode, weekSta
   weekStart.setDate(weekStart.getDate() - diff);
   return runOfDays(weekStart, WEEK_VIEW_DAYS);
 }
+
+/**
+ * The date one week-strip page away from `selectedDate`, for the arrows.
+ *
+ * Moving the selected date by seven days is right while every strip is a
+ * calendar week, but a rolling strip (today + 6) is not aligned to
+ * weekStartDay, so paging onto or off it can jump past a whole week: on a
+ * Sunday with weeks starting Monday, the rolling strip is Sun–Sat, and today
+ * − 7 lands on the last day of the calendar week two weeks back (#2045).
+ * The page must show the day just past the current strip's edge; when the
+ * seven-day shift does not, select that day instead.
+ *
+ * @param opts           as weekViewDatesFor, plus
+ * @param opts.direction -1 (previous) or 1 (next).
+ * @returns {Date} the new selected date, at local noon.
+ */
+export function shiftWeekStripDate({ direction, selectedDate, today = new Date(), ...opts }) {
+  const atNoon = (d) => { const n = new Date(d); n.setHours(12, 0, 0, 0); return n; };
+  const current = weekViewDatesFor({ ...opts, selectedDate, today });
+  const candidate = atNoon(selectedDate);
+  candidate.setDate(candidate.getDate() + direction * WEEK_VIEW_DAYS);
+  if (current.length === 0) return candidate;
+
+  const edge = atNoon(direction < 0 ? current[0] : current[current.length - 1]);
+  edge.setDate(edge.getDate() + direction);
+  const next = weekViewDatesFor({ ...opts, selectedDate: candidate, today });
+  return next.some(d => dateToString(d) === dateToString(edge)) ? candidate : edge;
+}

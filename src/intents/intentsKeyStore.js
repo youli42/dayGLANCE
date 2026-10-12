@@ -11,11 +11,16 @@ const STORE = 'keys';
 //                             own record so the two can't clobber each other.
 const ROOT_KEY_RECORD = 'root-key';
 const VAULT_ROOT_KEY_RECORD = 'vault-root-key';
+// The Direct Access intents key, stored WITH the base64 salt it was derived
+// from, since the folder's event set names the salt and a file that changes
+// salt needs a new key (intents/directAccessIntentsKey.js).
+const DIRECT_ACCESS_ROOT_KEY_RECORD = 'direct-access-root-key';
 
 // Module-level caches: avoid an IDB round-trip on every emit/poll cycle. Each
 // slot has its own cache, cleared synchronously by its clear* function.
 let _cachedRootKey = null;
 let _cachedVaultRootKey = null;
+let _cachedDirectAccessRecord = null;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -105,6 +110,45 @@ export async function clearVaultIntentsRootKey() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite');
     tx.objectStore(STORE).delete(VAULT_ROOT_KEY_RECORD);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// ─── Direct Access intents key slot: { saltB64, key } ───────────────────────
+
+export async function storeDirectAccessIntentsKey(record) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(record, DIRECT_ACCESS_ROOT_KEY_RECORD);
+    tx.oncomplete = () => { _cachedDirectAccessRecord = record; resolve(); };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** @returns {Promise<{saltB64: string, key: CryptoKey}|null>} */
+export async function loadDirectAccessIntentsKey() {
+  if (_cachedDirectAccessRecord !== null) return _cachedDirectAccessRecord;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(DIRECT_ACCESS_ROOT_KEY_RECORD);
+    req.onsuccess = () => {
+      const r = req.result;
+      _cachedDirectAccessRecord = r && typeof r.saltB64 === 'string' && r.key ? r : null;
+      resolve(_cachedDirectAccessRecord);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function clearDirectAccessIntentsKey() {
+  _cachedDirectAccessRecord = null;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(DIRECT_ACCESS_ROOT_KEY_RECORD);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

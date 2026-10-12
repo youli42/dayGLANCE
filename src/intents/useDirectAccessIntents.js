@@ -6,6 +6,9 @@ import { INTENT_CONFIG_KEY } from './useIntentPoller.js';
 import { isTrayMode } from '../utils/trayMode.js';
 import { intentDrainAllowed } from './intentDrainGate.js';
 import { getDeviceId } from '../sync/deviceId.js';
+import { directAccessEncryptsWrites } from '../sync/directAccessTransport.js';
+import { resolveDirectAccessIntentsKey } from './directAccessIntentsKey.js';
+import { getSyncPassphrase } from '../utils/crypto.js';
 
 /**
  * Polls the Direct Access event set (intents/folderIntents.js) on the
@@ -21,9 +24,11 @@ import { getDeviceId } from '../sync/deviceId.js';
  * kick a no-op; the next tick is the next attempt. The first cycle of a
  * session waits for the sync drain gate like the other pollers.
  */
-export function useDirectAccessIntents(context, { transport = directAccessTransport } = {}) {
+export function useDirectAccessIntents(context, { transport = directAccessTransport, onKeyNeeded } = {}) {
   const contextRef = useRef(context);
   contextRef.current = context;
+  const onKeyNeededRef = useRef(onKeyNeeded);
+  onKeyNeededRef.current = onKeyNeeded;
 
   useEffect(() => {
     if (isTrayMode) return;
@@ -34,6 +39,7 @@ export function useDirectAccessIntents(context, { transport = directAccessTransp
     })();
     let destroyed = false;
     let running = false;
+    let keyChecked = false;
     let state = { lastWriteAt: 0, pendingWrite: null };
 
     const run = async () => {
@@ -49,12 +55,24 @@ export function useDirectAccessIntents(context, { transport = directAccessTransp
             retentionMs: retentionMsFrom(localStorage),
             eventsPath: config?.eventsPath,
             deviceId: getDeviceId,
-            receive: (raw) => receiveEnvelope(raw, contextRef.current),
+            receive: (raw, meta) => receiveEnvelope(raw, contextRef.current, { salt: meta?.salt ?? null }),
           },
           state,
         }));
         state = r.state;
         if (r.outcome.kind === 'error') console.warn('[intent/direct-access] unavailable:', r.outcome.error);
+        // A sealed envelope this device cannot open, or (once per session) a
+        // sender whose encrypt switch is on with no key and no passphrase in
+        // memory: ask for the passphrase, the same prompt the sync file uses.
+        let wantKey = r.outcome.kind === 'merged' && r.outcome.keyNeeded;
+        if (!keyChecked && directAccessEncryptsWrites()) {
+          keyChecked = true;
+          try {
+            const k = await resolveDirectAccessIntentsKey({ transport, eventsPath: config?.eventsPath });
+            if (!k.key && !getSyncPassphrase()) wantKey = true;
+          } catch { /* the deliverer reports its own hold */ }
+        }
+        if (wantKey) onKeyNeededRef.current?.();
       } catch (err) {
         console.warn('[intent/direct-access] cycle failed:', err?.message ?? err);
       } finally {

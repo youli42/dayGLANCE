@@ -29,6 +29,7 @@
       "FORBIDDEN": "Synchronisation bloquée (403). Votre serveur bloque peut-être la requête.",
       "LOCKED": "La synchronisation est verrouillée par un autre appareil. Réessayez dans un instant.",
       "NETWORK_ERROR": "Erreur réseau. Vérifiez votre connexion et réessayez.",
+      "SYNC_FAILED": "La synchronisation n'a pas abouti : {{detail}}. Elle sera relancée automatiquement.",
       "PASSPHRASE_REQUIRED": "Saisissez votre phrase secrète de synchronisation pour continuer.",
       "PRECONDITION_FAILED": "Un autre appareil a effectué la mise à jour en premier. Nouvelle tentative.",
       "QUOTA_EXCEEDED": "Le serveur de synchronisation a atteint la limite de ce compte. Vos modifications sont enregistrées sur cet appareil et la synchronisation réessaiera automatiquement. Demandez à la personne qui gère votre serveur de synchronisation d'augmenter la limite.",
@@ -49,6 +50,10 @@
       "invalid": "Saisissez une URL de vault valide.",
       "httpRejected": "Connexion non sécurisée. Utilisez https:// pour un vault sur l'internet public. Le http:// simple n'est autorisé que sur un réseau local de confiance (localhost ou une adresse LAN).",
       "insecureLanWarning": "Connexion non chiffrée : à utiliser uniquement sur un réseau de confiance."
+    },
+    "webdavUrl": {
+      "insecureLanWarning": "Connexion non chiffrée : votre mot de passe est envoyé en clair. À utiliser uniquement sur un réseau de confiance.",
+      "insecurePublicWarning": "Connexion non chiffrée via Internet : votre mot de passe et vos données sont envoyés en clair. Utilisez https://. L'application Android refuse cette connexion."
     },
     "form": {
       "webdavTitle": "Synchronisation WebDAV",
@@ -479,7 +484,7 @@
     "experimental": "Expérimental",
     "experimentalHint": "Fonctions encore en construction, livrées par étapes. Désactivées par défaut ; rien ne change tant que vous n'en activez pas une.",
     "enableJobo": "Vue JOBO",
-    "enableJoboHint": "Prévu contre réalisé. Une sixième vue, sur la touche 6, qui enregistrera ce qui a été fait par rapport à ce qui était prévu.",
+    "enableJoboHint": "Prévu contre réalisé. Une sixième vue, sur la touche 6, qui enregistre ce qui a été fait par rapport à ce qui était prévu.",
     "enableJoboHintPhone": "Prévu contre réalisé. Une vue du sélecteur de vues de la chronologie, qui enregistre ce qui a été fait par rapport au plan.",
     "enableAspire": "Aspire",
     "enableAspireHint": "Planification de vie : une liste de souhaits, une vision à cinq ans et des devises. Un simple espace réservé pour l'instant, ouvert depuis l'espace Objectifs et projets.",
@@ -860,7 +865,6 @@
     "schedule": "Planifier",
     "dropToAllDay": "Déposer ici pour passer en journée entière",
     "addTask": "Ajouter une tâche",
-    "applyAssignmentTo": "Appliquer à",
     "assignmentEverybodyHint": "(vide = tout le monde)",
     "clearDeadline": "Effacer l’échéance",
     "descriptionPlaceholder": "Ajouter une description…",
@@ -961,6 +965,12 @@
     "deleteThisAndFutureHint": "Arrêter la récurrence à partir du {{date}}",
     "deleteEntireSeries": "Supprimer toute la série",
     "deleteEntireSeriesHint": "Retirer toutes les occurrences",
+    "editRecurring": "Modifier la tâche récurrente",
+    "editRecurringMessage": "Appliquer ces modifications à cette occurrence uniquement, ou à toute la série ?",
+    "editThisOccurrence": "Cette occurrence",
+    "editThisOccurrenceHint": "Modifier uniquement le {{date}}",
+    "editAllOccurrences": "Toutes les occurrences",
+    "editAllOccurrencesHint": "Modifier chaque occurrence de la série",
     "editRecurrenceTitle": "Modifier la récurrence",
     "convertToRegular": "Aucune (convertir en tâche ordinaire)",
     "emptyBinTitle": "Vider la corbeille",
@@ -1183,7 +1193,20 @@
     "stop": "Arrêter",
     "skipPhase": "Passer cette phase",
     "startHyperGlance": "Démarrer hyperGLANCE",
-    "tasksRemaining": "Tâches restantes : {{count}}"
+    "tasksRemaining": "Tâches restantes : {{count}}",
+    "doReview": {
+      "title": "Enregistrer le travail concentré",
+      "chooseTask": "Sur quelle tâche avez-vous travaillé ?",
+      "minutes": "{{minutes}} min à enregistrer",
+      "clockChanged": "L’heure ou le fuseau horaire a changé. Une partie du travail ne peut pas être enregistrée.",
+      "unavailable": "JOBO n’est pas accessible en écriture. Réessayez lorsqu’il sera prêt.",
+      "held": "Pas encore enregistré. Nouvelle tentative en cours. Enregistrez avant de terminer la tâche.",
+      "failed": "Échec de l’enregistrement. Réessayez.",
+      "completed": "Tâche terminée",
+      "inProgress": "Toujours en cours",
+      "dontRecord": "Ne pas enregistrer",
+      "continueWithoutSaving": "Continuer sans attendre"
+    }
   },
   "voice": {
     "title": "Saisie vocale",
@@ -1951,7 +1974,6 @@
     "recurring": "Récurrentes",
     "recurringTasks": "Tâches récurrentes",
     "allInstances": "Toutes les occurrences",
-    "thisInstance": "Cette occurrence",
     "clearProjectFilter": "Effacer le filtre du projet",
     "moreItems": "+{{count}} de plus",
     "nextOnly": "Prochaine seulement",
@@ -2254,6 +2276,9 @@
       "secondary": "Fins tardives : {{finish}} · A duré plus longtemps : {{longer}}"
     },
     "title": "JOBO",
+    "makeTask": "Créer une tâche",
+    "makeTaskHint": "Ouvre une nouvelle tâche dans la boîte de réception à partir de cette exécution et l'y relie.",
+    "makeTaskNotLinked": "Tâche ajoutée. L'exécution a changé entre-temps ; elle n'a donc pas été reliée.",
     "undo": {
       "changed": "Ce Do a changé depuis ; il est laissé tel quel.",
       "completionBlocked": "Sa tâche n’est plus terminée, le Do ne peut donc pas redevenir Terminé. Il est laissé tel quel.",

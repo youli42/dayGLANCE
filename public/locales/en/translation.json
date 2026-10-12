@@ -29,6 +29,7 @@
       "FORBIDDEN": "Sync blocked (403). Your server may be blocking the request.",
       "LOCKED": "Sync is locked by another device. Try again in a moment.",
       "NETWORK_ERROR": "Network error. Check your connection and try again.",
+      "SYNC_FAILED": "Sync didn't finish: {{detail}}. It will try again automatically.",
       "PASSPHRASE_REQUIRED": "Enter your sync passphrase to continue.",
       "PRECONDITION_FAILED": "Another device updated first. Retrying.",
       "QUOTA_EXCEEDED": "The sync server has reached its limit for this account. Your changes are saved on this device and syncing will retry automatically. Ask whoever runs your sync server to raise the limit.",
@@ -49,6 +50,10 @@
       "invalid": "Enter a valid vault URL.",
       "httpRejected": "Insecure connection. Use https:// for a vault on the public internet. Plain http:// is only allowed on a trusted local network (localhost or a LAN address).",
       "insecureLanWarning": "Unencrypted connection: only use on a trusted network."
+    },
+    "webdavUrl": {
+      "insecureLanWarning": "Unencrypted connection: your password is sent in plain text. Only use on a trusted network.",
+      "insecurePublicWarning": "Unencrypted connection over the internet: your password and data are sent in plain text. Use https://. The Android app refuses this connection."
     },
     "form": {
       "webdavTitle": "WebDAV Sync",
@@ -482,7 +487,7 @@
     "experimental": "Experimental",
     "experimentalHint": "Features still being built, landing in slices. Off by default; nothing changes unless you turn one on.",
     "enableJobo": "JOBO view",
-    "enableJoboHint": "Plan versus actual. A sixth view, on key 6, that will record what was done against what was planned.",
+    "enableJoboHint": "Plan versus actual. A sixth view, on key 6, that records what was done against what was planned.",
     "enableJoboHintPhone": "Plan versus actual. A view in the timeline's view switcher that records what was done against what was planned.",
     "enableAspire": "Aspire",
     "enableAspireHint": "Life planning: a life wish list, a five-year vision and mottos. A placeholder for now, opened from the Goals & Projects space.",
@@ -860,7 +865,6 @@
     "schedule": "Schedule",
     "dropToAllDay": "Drop here to make all-day",
     "addTask": "Add task",
-    "applyAssignmentTo": "Apply to",
     "assignmentEverybodyHint": "(empty = everybody)",
     "clearDeadline": "Clear deadline",
     "descriptionPlaceholder": "Add description…",
@@ -961,6 +965,12 @@
     "deleteThisAndFutureHint": "Stop recurring from {{date}} onward",
     "deleteEntireSeries": "Delete entire series",
     "deleteEntireSeriesHint": "Remove all occurrences",
+    "editRecurring": "Edit Recurring Task",
+    "editRecurringMessage": "Apply these changes to this occurrence only, or to the whole series?",
+    "editThisOccurrence": "This occurrence",
+    "editThisOccurrenceHint": "Only change {{date}}",
+    "editAllOccurrences": "All occurrences",
+    "editAllOccurrencesHint": "Change every occurrence in the series",
     "editRecurrenceTitle": "Edit Recurrence",
     "convertToRegular": "None (convert to regular task)",
     "emptyBinTitle": "Empty Recycle Bin",
@@ -1183,7 +1193,20 @@
     "stop": "Stop",
     "skipPhase": "Skip phase",
     "startHyperGlance": "Start hyperGLANCE",
-    "tasksRemaining": "Tasks ({{count}} remaining)"
+    "tasksRemaining": "Tasks ({{count}} remaining)",
+    "doReview": {
+      "title": "Record focused work",
+      "chooseTask": "Which task did you work on?",
+      "minutes": "{{minutes}} min to record",
+      "clockChanged": "The clock or time zone changed. Some work cannot be recorded.",
+      "unavailable": "JOBO is not writable. Try again when it is ready.",
+      "held": "Not saved yet. Retrying. Save before completing the task.",
+      "failed": "Could not save. Try again.",
+      "completed": "Task completed",
+      "inProgress": "Still in progress",
+      "dontRecord": "Don't record",
+      "continueWithoutSaving": "Continue without waiting"
+    }
   },
   "voice": {
     "title": "Voice Input",
@@ -1951,7 +1974,6 @@
     "recurring": "Recurring",
     "recurringTasks": "Recurring tasks",
     "allInstances": "All instances",
-    "thisInstance": "This instance",
     "clearProjectFilter": "Clear project filter",
     "moreItems": "+{{count}} more",
     "nextOnly": "Next only",
@@ -2254,6 +2276,9 @@
       "secondary": "Late finishes: {{finish}} · Ran long: {{longer}}"
     },
     "title": "JOBO",
+    "makeTask": "Make a task",
+    "makeTaskHint": "Opens a new Inbox task from this Do and links the Do to it.",
+    "makeTaskNotLinked": "Task added. The Do changed in the meantime, so it was not linked.",
     "undo": {
       "changed": "This Do has changed since, so it was left as it is.",
       "completionBlocked": "Its task is no longer completed, so the Do can't return to Completed. It was left as it is.",

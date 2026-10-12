@@ -22,6 +22,30 @@
  */
 export function syncErrorText(t, message, code) {
   if (!message) return null;
-  if (code) return t(`sync.errors.${code}`, { defaultValue: message });
+  // `detail` lets a code's string quote the engine's message (SYNC_FAILED does);
+  // strings that don't reference it ignore it.
+  if (code) return t(`sync.errors.${code}`, { defaultValue: message, detail: message });
   return message;
+}
+
+/**
+ * The code a failed GLANCEvault cycle reports (#2035).
+ *
+ * The vault client codes every HTTP failure, so an error with no code either
+ * came from the transport (no response at all: offline, DNS, refused, TLS) or
+ * from this device (IndexedDB, the apply path, a bug). Only the first is a
+ * network error. The old blanket NETWORK_ERROR fallback told people to check a
+ * connection that was fine; SYNC_FAILED quotes the real message instead.
+ *
+ * @param {unknown} err  what the cycle threw
+ * @param {WeakSet<object>} transportErrors  errors the transport itself threw
+ * @returns {string}
+ */
+export function cycleErrorCode(err, transportErrors) {
+  // A DOMException carries a legacy NUMERIC `code` (QuotaExceededError is 22),
+  // which is not one of ours: only a string code is.
+  if (err && typeof err.code === 'string' && err.code) return err.code;
+  const isTransport = (e) => !!e && typeof e === 'object' && !!transportErrors?.has(e);
+  if (isTransport(err) || isTransport(err?.cause)) return 'NETWORK_ERROR';
+  return 'SYNC_FAILED';
 }

@@ -39,6 +39,7 @@
       "FORBIDDEN": "Synchronizacja zablokowana (403). Twój serwer może blokować żądanie.",
       "LOCKED": "Synchronizacja jest zablokowana przez inne urządzenie. Spróbuj ponownie za chwilę.",
       "NETWORK_ERROR": "Błąd sieci. Sprawdź swoje połączenie i spróbuj ponownie.",
+      "SYNC_FAILED": "Synchronizacja nie została ukończona: {{detail}}. Zostanie automatycznie ponowiona.",
       "PASSPHRASE_REQUIRED": "Podaj swoje hasło synchronizacji, aby kontynuować.",
       "PRECONDITION_FAILED": "Inne urządzenie zaktualizowało dane wcześniej. Ponowna próba.",
       "QUOTA_EXCEEDED": "Serwer synchronizacji osiągnął limit dla tego konta. Zmiany są zapisane na tym urządzeniu, a synchronizacja zostanie ponowiona automatycznie. Poproś osobę administrującą serwerem synchronizacji o zwiększenie limitu.",
@@ -59,6 +60,10 @@
       "invalid": "Podaj prawidłowy adres URL magazynu GLANCEvault.",
       "httpRejected": "Niezabezpieczone połączenie. Dla magazynu w publicznym internecie użyj https://. Zwykłe http:// jest dozwolone tylko w zaufanej sieci lokalnej (localhost lub adres LAN).",
       "insecureLanWarning": "Połączenie bez szyfrowania: używaj tylko w zaufanej sieci."
+    },
+    "webdavUrl": {
+      "insecureLanWarning": "Połączenie nieszyfrowane: hasło jest wysyłane otwartym tekstem. Używaj tylko w zaufanej sieci.",
+      "insecurePublicWarning": "Nieszyfrowane połączenie przez internet: hasło i dane są wysyłane otwartym tekstem. Użyj https://. Aplikacja na Androida odrzuca to połączenie."
     },
     "form": {
       "webdavTitle": "Synchronizacja WebDAV",
@@ -501,7 +506,7 @@
     "experimental": "Eksperymentalne",
     "experimentalHint": "Funkcje w trakcie tworzenia, wprowadzane etapami. Domyślnie wyłączone; nic się nie zmieni, dopóki którejś nie włączysz.",
     "enableJobo": "Widok JOBO",
-    "enableJoboHint": "Plan kontra rzeczywistość. Szósty widok, pod klawiszem 6, który będzie rejestrować, co faktycznie wykonano, na tle planu.",
+    "enableJoboHint": "Plan kontra rzeczywistość. Szósty widok, pod klawiszem 6, który rejestruje, co faktycznie wykonano, na tle planu.",
     "enableJoboHintPhone": "Plan kontra rzeczywistość. Widok w przełączniku widoków osi czasu, który zapisuje, co zrobiono względem planu.",
     "enableAspire": "Aspire",
     "enableAspireHint": "Planowanie życia: lista życzeń, pięcioletnia wizja i motta. Na razie zaślepka, otwierana z przestrzeni Cele i projekty.",
@@ -879,7 +884,6 @@
     "schedule": "Harmonogram",
     "dropToAllDay": "Upuść tutaj, aby ustawić jako całodniowe",
     "addTask": "Dodaj zadanie",
-    "applyAssignmentTo": "Zastosuj do",
     "assignmentEverybodyHint": "(puste = wszyscy)",
     "clearDeadline": "Wyczyść termin",
     "descriptionPlaceholder": "Dodaj opis…",
@@ -982,6 +986,12 @@
     "deleteThisAndFutureHint": "Zakończ powtarzanie od {{date}}",
     "deleteEntireSeries": "Usuń całą serię",
     "deleteEntireSeriesHint": "Usuń wszystkie wystąpienia",
+    "editRecurring": "Edytuj zadanie cykliczne",
+    "editRecurringMessage": "Zastosować te zmiany tylko do tego wystąpienia czy do całej serii?",
+    "editThisOccurrence": "To wystąpienie",
+    "editThisOccurrenceHint": "Zmień tylko {{date}}",
+    "editAllOccurrences": "Wszystkie wystąpienia",
+    "editAllOccurrencesHint": "Zmień każde wystąpienie w serii",
     "editRecurrenceTitle": "Edytuj powtarzanie",
     "convertToRegular": "Brak (zamień na zwykłe zadanie)",
     "emptyBinTitle": "Opróżnij kosz",
@@ -1210,7 +1220,20 @@
     "stop": "Zatrzymaj",
     "skipPhase": "Pomiń fazę",
     "startHyperGlance": "Uruchom hyperGLANCE",
-    "tasksRemaining": "Zadania (pozostało: {{count}})"
+    "tasksRemaining": "Zadania (pozostało: {{count}})",
+    "doReview": {
+      "title": "Zapisz pracę w skupieniu",
+      "chooseTask": "Nad którym zadaniem pracowano?",
+      "minutes": "{{minutes}} min do zapisania",
+      "clockChanged": "Zegar lub strefa czasowa uległy zmianie. Części pracy nie można zapisać.",
+      "unavailable": "Nie można zapisywać w JOBO. Spróbuj ponownie, gdy będzie gotowe.",
+      "held": "Jeszcze nie zapisano. Trwa ponawianie próby. Zapisz przed ukończeniem zadania.",
+      "failed": "Nie udało się zapisać. Spróbuj ponownie.",
+      "completed": "Zadanie ukończone",
+      "inProgress": "Nadal w toku",
+      "dontRecord": "Nie zapisuj",
+      "continueWithoutSaving": "Kontynuuj bez czekania"
+    }
   },
   "voice": {
     "title": "Wprowadzanie głosowe",
@@ -2044,7 +2067,6 @@
     "recurring": "Cykliczne",
     "recurringTasks": "Zadania cykliczne",
     "allInstances": "Wszystkie wystąpienia",
-    "thisInstance": "To wystąpienie",
     "clearProjectFilter": "Wyczyść filtr projektu",
     "moreItems": "+{{count}} więcej",
     "nextOnly": "Tylko następne",
@@ -2347,6 +2369,9 @@
       "secondary": "Późne zakończenia: {{finish}} · Trwało dłużej: {{longer}}"
     },
     "title": "JOBO",
+    "makeTask": "Utwórz zadanie",
+    "makeTaskHint": "Otwiera nowe zadanie w skrzynce na podstawie tego wykonania i łączy z nim to wykonanie.",
+    "makeTaskNotLinked": "Dodano zadanie. Wykonanie zmieniło się w międzyczasie, więc nie zostało połączone.",
     "undo": {
       "changed": "Ten Do zmienił się w międzyczasie, więc pozostał bez zmian.",
       "completionBlocked": "Jego zadanie nie jest już ukończone, więc Do nie może wrócić do stanu Ukończone. Pozostał bez zmian.",

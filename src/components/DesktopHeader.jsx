@@ -17,7 +17,7 @@ import { useFeaturesCtx } from '../context/FeaturesContext.jsx';
 const DesktopHeader = () => {
   const {
     visibleDays, visibleDates,
-    effectiveViewMode, dayViewColumns,
+    effectiveViewMode, dayViewColumns, dayViewRollingPaused,
     weekViewDates,
     selectedDate,
     darkMode, setDarkMode,
@@ -171,7 +171,7 @@ const DesktopHeader = () => {
             </button>
             <button
               onClick={goToToday}
-              className={`ml-1 px-3 py-1 flex-shrink-0 text-xs bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors${dateToString(selectedDate) === dateToString(new Date()) ? ' invisible' : ''}`}
+              className={`ml-1 px-3 py-1 flex-shrink-0 text-xs bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors${dateToString(selectedDate) === dateToString(new Date()) && !dayViewRollingPaused ? ' invisible' : ''}`}
             >
               {t('common.today')}
             </button>

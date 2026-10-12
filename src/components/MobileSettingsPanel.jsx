@@ -23,6 +23,7 @@ import CloudSyncSettingsForm from './CloudSyncSettingsForm.jsx';
 import ICloudDiagnostics from './ICloudDiagnostics.jsx';
 import ICloudSyncToggle from './ICloudSyncToggle.jsx';
 import DirectAccessSyncCard from './DirectAccessSyncCard.jsx';
+import DirectAccessFileRow from './DirectAccessFileRow.jsx';
 import { isDirectAccessSupported } from '../sync/directAccessTransport.js';
 import useDirectAccessStatus from '../hooks/useDirectAccessStatus.js';
 import AutoBackupSettingsForm from './AutoBackupSettingsForm.jsx';
@@ -42,6 +43,8 @@ import { multiUserToggleLocked, multiUserUnavailableReason, canSyncUserRoster } 
 import { getDbIntentsConfig, setDbIntentsConfig, getDbIntentsConnection } from '../intents/dbIntentsConfig.js';
 import { getIcloudIntentsEnabledFlag, setIcloudIntentsEnabled } from '../intents/icloudIntentsConfig.js';
 import { getDirectAccessIntentsEnabledFlag, setDirectAccessIntentsEnabled } from '../intents/directAccessIntentsConfig.js';
+import { resolveDirectAccessIntentsKey } from '../intents/directAccessIntentsKey.js';
+import { directAccessTransport } from '../sync/directAccessTransport.js';
 import { useFeaturesCtx } from '../context/FeaturesContext.jsx';
 import { INTENT_CONFIG_KEY, MULTI_USER_CONFIG_KEY } from '../intents/useIntentPoller.js';
 import { syncSharedUsers, syncSharedUsersViaICloud, syncSharedUsersViaDirectAccess, markRosterEdited } from '../intents/sharedUsers.js';
@@ -226,6 +229,11 @@ const MobileSettingsPanel = () => {
   // Direct Access intents opt-in (docs/direct-access-sync.md, Phase 7).
   const [directAccessIntentsEnabled, setDirectAccessIntentsEnabledState] = useState(() => getDirectAccessIntentsEnabledFlag());
   const [directAccessIntentsSaved, setDirectAccessIntentsSaved] = useState(false);
+  // With the encrypt switch on, the opt-in needs the intents key for the
+  // folder's salt (intents/directAccessIntentsKey.js): derived from the sync
+  // passphrase when it is in memory, asked for once when it is not.
+  const [directAccessIntentsPassphrase, setDirectAccessIntentsPassphrase] = useState('');
+  const [directAccessIntentsKeyWanted, setDirectAccessIntentsKeyWanted] = useState(false);
   // Android automation intents (Tasker) opt-in gate. DEFAULT OFF — the native
   // SharedPreferences flag is the source of truth; mirror it for the toggle.
   const [automationIntentsEnabled, setAutomationIntentsEnabled] = useState(
@@ -1634,7 +1642,6 @@ const MobileSettingsPanel = () => {
       {isDirectAccessSupported() && (
         <DirectAccessSyncCard
           darkMode={darkMode}
-          multiUserEnabled={multiUserEnabled}
           textPrimary={textPrimary}
           textSecondary={textSecondary}
           borderClass={borderClass}
@@ -2627,6 +2634,7 @@ const MobileSettingsPanel = () => {
             {!directAccessStatus.connected && (
               <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">{t('settings.directAccessIntentsNeedsFolder')}</p>
             )}
+            <DirectAccessFileRow slot="events" darkMode={darkMode} textPrimary={textPrimary} textSecondary={textSecondary} borderClass={borderClass} />
             <div className={`flex items-start gap-3 p-3 rounded-lg border ${borderClass}`}>
               <input
                 type="checkbox"
@@ -2641,9 +2649,31 @@ const MobileSettingsPanel = () => {
                 </label>
               </div>
             </div>
+            {directAccessIntentsKeyWanted && (
+              <div className={`p-3 rounded-lg border ${borderClass} space-y-2`}>
+                <p className={`text-sm ${textPrimary}`}>{t('settings.intentsPassphraseSetupTitle', { defaultValue: 'Enter your sync passphrase to complete setup' })}</p>
+                <p className={`text-xs ${textSecondary}`}>{t('settings.intentsPassphraseSetupHint', { defaultValue: 'Required once to derive the intents encryption key. After this, no passphrase is needed across sessions.' })}</p>
+                <input
+                  type="password"
+                  autoFocus
+                  value={directAccessIntentsPassphrase}
+                  onChange={e => setDirectAccessIntentsPassphrase(e.target.value)}
+                  placeholder={t('sync.passphrasePlaceholder', { defaultValue: 'Your sync passphrase' })}
+                  className={`w-full px-3 py-2 border ${borderClass} rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-700 text-white' : 'bg-white text-stone-900'} text-sm`}
+                />
+              </div>
+            )}
             <button
-              onClick={() => {
+              onClick={async () => {
                 const wasEnabled = getDirectAccessIntentsEnabledFlag();
+                if (directAccessIntentsEnabled && directAccessStatus.encrypt) {
+                  const typed = directAccessIntentsPassphrase.trim();
+                  if (typed) setSyncPassphrase(typed);
+                  const r = await resolveDirectAccessIntentsKey({ transport: directAccessTransport });
+                  if (!r.key) { setDirectAccessIntentsKeyWanted(true); return; }
+                  setDirectAccessIntentsKeyWanted(false);
+                  setDirectAccessIntentsPassphrase('');
+                }
                 setDirectAccessIntentsEnabled(directAccessIntentsEnabled);
                 // Reload so the poller remounts and re-reads the opt-in, as the
                 // iCloud and GLANCEvault intents switches do.
@@ -3236,6 +3266,7 @@ const MobileSettingsPanel = () => {
       </div>
 
       {/* People */}
+      <DirectAccessFileRow slot="users" darkMode={darkMode} textPrimary={textPrimary} textSecondary={textSecondary} borderClass={borderClass} />
       <div>
         <p className={`text-xs font-medium ${textSecondary} mb-2`}>{t('settings.multiUserPeople')}</p>
         <div className="space-y-2">
@@ -3359,8 +3390,8 @@ const MobileSettingsPanel = () => {
       </div>
 
 
-      {/* Users sync path (only shown when cloud sync is configured) */}
-      {cloudSyncConfig?.enabled && (
+      {/* Users sync path (shown when a roster road is configured: WebDAV or a Direct Access folder) */}
+      {(cloudSyncConfig?.enabled || directAccessRoster) && (
         <div>
           <label className={`block text-sm ${textSecondary} mb-1`}>{t('settings.usersSyncPath')}</label>
           <input

@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { isNativeAndroid, isNativeApp } from '../native.js';
 
 import { isTrayMode } from '../utils/trayMode.js';
+import { isWelcomeDismissed, markWelcomeDismissed, shouldShowWelcomeAtBoot } from '../utils/welcomeTour.js';
 
 export default function useAppInit({
   loadData, fetchAllDailyContent, setContentRotation,
@@ -31,25 +32,27 @@ export default function useAppInit({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist welcome dismissal only when user has real tasks
+  // Remember that the tour was closed, so it is not re-offered on every boot
+  // while the task list is empty (#2034). Only a close of a tour that was
+  // actually open counts: showWelcome starts false before the boot check.
+  const welcomeWasShown = useRef(false);
   useEffect(() => {
     if (isTrayMode) return;
-    if (!showWelcome && !hasZeroRealTasks) {
-      localStorage.setItem('welcomeDismissed', 'true');
+    if (showWelcome) {
+      welcomeWasShown.current = true;
+    } else if (welcomeWasShown.current) {
+      welcomeWasShown.current = false;
+      markWelcomeDismissed();
     }
-  }, [showWelcome, hasZeroRealTasks]);
+  }, [showWelcome]);
 
-  // Show welcome only on initial load with zero tasks (not when zeroing out during session)
+  // Show welcome only on initial load with zero tasks (not when zeroing out
+  // during session), and only until the user has closed it once.
   useEffect(() => {
     if (isTrayMode) return;
     if (dataLoaded && !hasCheckedInitialWelcome.current) {
       hasCheckedInitialWelcome.current = true;
-      if (hasZeroRealTasks) {
-        setShowWelcome(true);
-        localStorage.removeItem('welcomeDismissed');
-      } else {
-        setShowWelcome(false);
-      }
+      setShowWelcome(shouldShowWelcomeAtBoot({ hasZeroRealTasks, dismissed: isWelcomeDismissed() }));
     }
   }, [dataLoaded, hasZeroRealTasks, hasCheckedInitialWelcome, setShowWelcome]);
 }

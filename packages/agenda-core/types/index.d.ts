@@ -7,6 +7,7 @@ export function getSelectedWeekdays(recurrence: unknown, dateStr: string): numbe
 export function toggleRecurrenceDay(recurrence: unknown, dow: number, dateStr: string): unknown;
 export function setRecurrenceFrequency(recurrence: unknown, type: string, dateStr: string): unknown;
 export function weekdayOrder(weekStartDay?: number): number[];
+export function editedSeriesStart(recurrence: unknown, origStart: string | undefined, dateStr: string): string;
 
 export interface AgendaItem {
   id: string;

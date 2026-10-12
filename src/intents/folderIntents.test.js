@@ -89,8 +89,8 @@ describe('the event set', () => {
     expect(parseEventSetText('{"error":"gone"}')).toEqual({ kind: 'error', error: 'gone' });
     expect(parseEventSetText('{"version":2,"data":{}}')).toEqual({ kind: 'no-data' });
     const e = foreign('a');
-    expect(parseEventSetText(fileWith(e))).toEqual({ kind: 'set', events: [e], writtenBy: null });
-    expect(parseEventSetText(serializeEventSet([e], 'mac-1'))).toEqual({ kind: 'set', events: [e], writtenBy: 'mac-1' });
+    expect(parseEventSetText(fileWith(e))).toEqual({ kind: 'set', events: [e], writtenBy: null, salt: null });
+    expect(parseEventSetText(serializeEventSet([e], 'mac-1'))).toEqual({ kind: 'set', events: [e], writtenBy: 'mac-1', salt: null });
     expect(relativeEventsPath(undefined)).toBe('GLANCE/events/glance-events.json');
     expect(relativeEventsPath('/Shared/ev/')).toBe('Shared/ev/glance-events.json');
   });
@@ -101,6 +101,33 @@ describe('the event set', () => {
     expect(retentionMsFrom(localStorage)).toBe(7 * DAY);
     localStorage.setItem('dayglance-intent-config', '{bad');
     expect(retentionMsFrom(localStorage)).toBe(30 * DAY);
+  });
+});
+
+describe('the salt in the header', () => {
+  it('is parsed, serialized, kept by every writer once the file names one, brought by a sender when it does not, and handed to receive', async () => {
+    const a = foreign('a');
+    expect(parseEventSetText(serializeEventSet([a], 'mac', 'c2FsdA=='))).toMatchObject({ kind: 'set', salt: 'c2FsdA==' });
+    expect(parseEventSetText(serializeEventSet([a]))).toMatchObject({ kind: 'set', salt: null });
+    // A sender brings its salt to a file that names none.
+    const folder = { text: null };
+    ledgerAppend(mine('own'), localStorage);
+    const r1 = await runEventSetCycle({ transport: fakeTransport(folder), io: { storage: localStorage, now: () => T0, retentionMs: RETENTION, salt: 'bWluZQ==' }, state: null });
+    expect(r1.outcome).toMatchObject({ wrote: true, salt: 'bWluZQ==' });
+    expect(JSON.parse(folder.text).salt).toBe('bWluZQ==');
+    // The file's salt wins over anything a later writer brings, and reaches receive.
+    const seen = [];
+    folder.text = serializeEventSet([...JSON.parse(folder.text).events, foreign('from dayGLANCE', 2000)], 'mac', 'bWluZQ==');
+    localStorage.removeItem(DIRECT_ACCESS_INTENT_LEDGER_KEY);
+    ledgerAppend(mine('own2', -1000), localStorage);
+    const r2 = await runEventSetCycle({ transport: fakeTransport(folder), io: { storage: localStorage, now: () => T0, retentionMs: RETENTION, salt: 'b3RoZXI=', receive: async (e, meta) => { seen.push(meta.salt); } }, state: null });
+    expect(r2.outcome).toMatchObject({ wrote: true, salt: 'bWluZQ==' });
+    expect(JSON.parse(folder.text).salt).toBe('bWluZQ==');
+    // A receiver with nothing of its own keeps the salt too, and sees it.
+    const r3 = await runEventSetCycle({ transport: fakeTransport(folder), io: { storage: memLocalStorage(), now: () => T0, retentionMs: RETENTION, receive: async (e, meta) => { seen.push(meta.salt); } }, state: null });
+    expect(r3.outcome.salt).toBe('bWluZQ==');
+    expect(seen.every((x) => x === 'bWluZQ==')).toBe(true);
+    expect(seen.length).toBeGreaterThan(0);
   });
 });
 
@@ -142,6 +169,15 @@ describe('receiveEnvelope', () => {
     expect(await receiveEnvelope({ emitted_by: SELF, action: 'dance', event_id: 'x' }, {}, d)).toEqual({ handled: false, skipped: 'own' });
     expect(d.handleIntent).not.toHaveBeenCalled();
     expect(d.logActivity).not.toHaveBeenCalled();
+  });
+
+  it('an encrypted envelope under a salt the file names: opened with the key for that salt, the WebDAV key only as the fallback', async () => {
+    const right = await deriveIntentsRootKey('pw', new Uint8Array(16).fill(1));
+    const sealed = await buildEncryptedEnvelope({ action: 'notify', payload: payload('Sealed'), emittedBy: 'app.testglance', emittedAt: new Date(T0) }, (salt) => deriveEnvelopeKey(right, salt));
+    const d = deps();
+    expect(await receiveEnvelope(sealed, {}, { ...d, salt: 'c2FsdA==', loadKeyForSalt: async (salt) => (salt === 'c2FsdA==' ? right : null), loadKey: async () => null })).toEqual({ handled: true, success: true });
+    expect(await receiveEnvelope(sealed, {}, { ...d, salt: 'c2FsdA==', loadKeyForSalt: async () => null, loadKey: async () => right })).toEqual({ handled: true, success: true });
+    expect(await receiveEnvelope(sealed, {}, { ...d, salt: 'c2FsdA==', loadKeyForSalt: async () => null, loadKey: async () => null })).toEqual({ handled: false, skipped: 'no_root_key' });
   });
 
   it('an encrypted envelope: opened with the WebDAV intents root key, skipped and logged without one, skipped with the wrong one', async () => {
@@ -297,6 +333,26 @@ describe('runEventSetCycle', () => {
     const { outcome } = await runEventSetCycle({ transport: t, io: i, state: fresh() });
     expect(outcome.received).toBe(1);
     expect(i.log.warn).toHaveBeenCalled();
+    expect(getCursor(localStorage)).toBe(b.event_id);
+  });
+
+  it('an envelope this device has no key for holds the cursor in front of it and reports keyNeeded; later ones wait too', async () => {
+    const a = foreign('a', 3000), sealed = foreign('sealed', 2000), b = foreign('b', 1000);
+    const folder = { text: fileWith(a, sealed, b) };
+    const handled = [];
+    const receive = async (e) => {
+      if (e.event_id === sealed.event_id) return { handled: false, skipped: 'no_root_key' };
+      handled.push(e.event_id);
+      return { handled: true };
+    };
+    const r = await runEventSetCycle({ transport: fakeTransport(folder), io: { storage: localStorage, now: () => T0, retentionMs: RETENTION, receive }, state: null });
+    expect(r.outcome).toMatchObject({ received: 1, keyNeeded: true });
+    expect(handled).toEqual([a.event_id]);
+    expect(getCursor(localStorage)).toBe(a.event_id);
+    // The key arrives: the next cycle handles the sealed one and the rest.
+    const r2 = await runEventSetCycle({ transport: fakeTransport(folder), io: { storage: localStorage, now: () => T0, retentionMs: RETENTION, receive: async (e) => { handled.push(e.event_id); return { handled: true }; } }, state: r.state });
+    expect(r2.outcome).toMatchObject({ received: 2, keyNeeded: false });
+    expect(handled).toEqual([a.event_id, sealed.event_id, b.event_id]);
     expect(getCursor(localStorage)).toBe(b.event_id);
   });
 

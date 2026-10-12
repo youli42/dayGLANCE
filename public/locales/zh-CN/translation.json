@@ -29,6 +29,7 @@
       "FORBIDDEN": "同步被阻止（403）。服务器可能拦截了此请求。",
       "LOCKED": "另一台设备正在同步，请稍后重试。",
       "NETWORK_ERROR": "网络错误。检查您的连接并重试。",
+      "SYNC_FAILED": "同步未完成：{{detail}}。将自动重试。",
       "PASSPHRASE_REQUIRED": "输入您的同步密码以继续。",
       "PRECONDITION_FAILED": "另一台设备已先完成更新，正在重试。",
       "QUOTA_EXCEEDED": "此账户已达到同步服务器的配额上限。你的更改仍保存在本机，系统会自动重试同步。请联系服务器管理员提高配额。",
@@ -49,6 +50,10 @@
       "invalid": "请输入有效的 GLANCEvault URL。",
       "httpRejected": "连接不安全。公网 GLANCEvault 必须使用 https://。只有 localhost 或局域网地址等受信任本地网络才允许使用明文 http://。",
       "insecureLanWarning": "当前连接未加密，请仅在受信任的网络中使用。"
+    },
+    "webdavUrl": {
+      "insecureLanWarning": "未加密的连接：您的密码以明文发送。仅在受信任的网络中使用。",
+      "insecurePublicWarning": "通过互联网的未加密连接：您的密码和数据以明文发送。请使用 https://。Android 应用会拒绝此连接。"
     },
     "form": {
       "webdavTitle": "WebDAV 同步",
@@ -860,7 +865,6 @@
     "schedule": "日程",
     "dropToAllDay": "拖到此处设为全天任务",
     "addTask": "添加任务",
-    "applyAssignmentTo": "应用于",
     "assignmentEverybodyHint": "（留空 = 所有人）",
     "clearDeadline": "清除截止日期",
     "descriptionPlaceholder": "添加描述…",
@@ -961,6 +965,12 @@
     "deleteThisAndFutureHint": "从 {{date}} 开始停止重复",
     "deleteEntireSeries": "删除整个系列",
     "deleteEntireSeriesHint": "移除全部重复实例",
+    "editRecurring": "编辑重复任务",
+    "editRecurringMessage": "将这些更改仅应用于此实例，还是应用于整个系列？",
+    "editThisOccurrence": "此实例",
+    "editThisOccurrenceHint": "仅更改 {{date}}",
+    "editAllOccurrences": "所有实例",
+    "editAllOccurrencesHint": "更改系列中的每个实例",
     "editRecurrenceTitle": "编辑重复",
     "convertToRegular": "不重复（转换为普通任务）",
     "emptyBinTitle": "清空回收站",
@@ -1183,7 +1193,20 @@
     "stop": "停止",
     "skipPhase": "跳过当前阶段",
     "startHyperGlance": "开始 hyperGLANCE",
-    "tasksRemaining": "任务（剩余 {{count}} 个）"
+    "tasksRemaining": "任务（剩余 {{count}} 个）",
+    "doReview": {
+      "title": "记录专注工作",
+      "chooseTask": "你完成了哪项任务的工作？",
+      "minutes": "将记录 {{minutes}} 分钟",
+      "clockChanged": "时钟或时区变化，部分时段无法记录。",
+      "unavailable": "JOBO 尚不可写，恢复后请重试。",
+      "held": "尚未保存，正在重试。保存成功后才能完成任务。",
+      "failed": "未能保存，请重试。",
+      "completed": "任务已完成",
+      "inProgress": "仍在进行",
+      "dontRecord": "不记录",
+      "continueWithoutSaving": "不再等待，继续"
+    }
   },
   "voice": {
     "title": "语音输入",
@@ -1951,7 +1974,6 @@
     "recurring": "重复",
     "recurringTasks": "重复任务",
     "allInstances": "所有实例",
-    "thisInstance": "此实例",
     "clearProjectFilter": "清除项目筛选",
     "moreItems": "另有 {{count}} 项",
     "nextOnly": "仅下一个",
@@ -2254,6 +2276,9 @@
       "secondary": "结束偏晚：{{finish}} · 超时：{{longer}}"
     },
     "title": "JOBO",
+    "makeTask": "创建任务",
+    "makeTaskHint": "根据此执行记录在收件箱中新建任务，并将其关联到该任务。",
+    "makeTaskNotLinked": "任务已添加。该执行记录在此期间已更改，因此未关联。",
     "undo": {
       "changed": "这条执行记录之后已被修改，因此保持不变。",
       "completionBlocked": "对应任务已不再是已完成状态，因此执行记录无法恢复为“已完成”，保持不变。",

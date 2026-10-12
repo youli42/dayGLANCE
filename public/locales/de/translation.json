@@ -28,6 +28,7 @@
       "FORBIDDEN": "Synchronisierung blockiert (403). Ihr Server blockiert möglicherweise die Anfrage.",
       "LOCKED": "Die Synchronisierung ist von einem anderen Gerät gesperrt. Versuchen Sie es gleich noch einmal.",
       "NETWORK_ERROR": "Netzwerkfehler. Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+      "SYNC_FAILED": "Die Synchronisierung wurde nicht abgeschlossen: {{detail}}. Sie wird automatisch erneut versucht.",
       "PASSPHRASE_REQUIRED": "Geben Sie Ihre Sync-Passphrase ein, um fortzufahren.",
       "PRECONDITION_FAILED": "Ein anderes Gerät hat zuerst aktualisiert. Wird erneut versucht.",
       "KEY_MISMATCH": "Falsche Sync-Passphrase. Sie muss genau mit der auf Ihren anderen Geräten verwendeten Passphrase übereinstimmen.",
@@ -49,6 +50,10 @@
       "invalid": "Geben Sie eine gültige Vault-URL ein.",
       "httpRejected": "Unsichere Verbindung. Verwenden Sie https:// für einen Vault im öffentlichen Internet. Einfaches http:// ist nur in einem vertrauenswürdigen lokalen Netzwerk erlaubt (localhost oder eine LAN-Adresse).",
       "insecureLanWarning": "Unverschlüsselte Verbindung: nur in einem vertrauenswürdigen Netzwerk verwenden."
+    },
+    "webdavUrl": {
+      "insecureLanWarning": "Unverschlüsselte Verbindung: Ihr Passwort wird im Klartext gesendet. Nur in einem vertrauenswürdigen Netzwerk verwenden.",
+      "insecurePublicWarning": "Unverschlüsselte Verbindung über das Internet: Ihr Passwort und Ihre Daten werden im Klartext gesendet. Verwenden Sie https://. Die Android-App lehnt diese Verbindung ab."
     },
     "form": {
       "webdavTitle": "WebDAV-Synchronisierung",
@@ -860,7 +865,6 @@
     "schedule": "Planen",
     "dropToAllDay": "Hier ablegen für ganztägig",
     "addTask": "Aufgabe hinzufügen",
-    "applyAssignmentTo": "Anwenden auf",
     "assignmentEverybodyHint": "(leer = alle)",
     "clearDeadline": "Frist löschen",
     "descriptionPlaceholder": "Beschreibung hinzufügen…",
@@ -961,6 +965,12 @@
     "deleteThisAndFutureHint": "Wiederholung ab {{date}} stoppen",
     "deleteEntireSeries": "Gesamte Serie löschen",
     "deleteEntireSeriesHint": "Alle Vorkommen entfernen",
+    "editRecurring": "Wiederkehrende Aufgabe bearbeiten",
+    "editRecurringMessage": "Diese Änderungen nur auf dieses Vorkommen oder auf die ganze Serie anwenden?",
+    "editThisOccurrence": "Dieses Vorkommen",
+    "editThisOccurrenceHint": "Nur {{date}} ändern",
+    "editAllOccurrences": "Alle Vorkommen",
+    "editAllOccurrencesHint": "Jedes Vorkommen der Serie ändern",
     "editRecurrenceTitle": "Wiederholung bearbeiten",
     "convertToRegular": "Keine (in reguläre Aufgabe umwandeln)",
     "emptyBinTitle": "Papierkorb leeren",
@@ -1183,7 +1193,20 @@
     "stop": "Stopp",
     "skipPhase": "Phase überspringen",
     "startHyperGlance": "hyperGLANCE starten",
-    "tasksRemaining": "Aufgaben (noch {{count}})"
+    "tasksRemaining": "Aufgaben (noch {{count}})",
+    "doReview": {
+      "title": "Fokusarbeit erfassen",
+      "chooseTask": "An welcher Aufgabe hast du gearbeitet?",
+      "minutes": "{{minutes}} Min. zum Erfassen",
+      "clockChanged": "Uhrzeit oder Zeitzone geändert. Ein Teil der Arbeit kann nicht erfasst werden.",
+      "unavailable": "JOBO ist nicht beschreibbar. Versuche es später erneut.",
+      "held": "Noch nicht gespeichert. Erneuter Versuch läuft. Schließe die Aufgabe erst nach dem Speichern ab.",
+      "failed": "Speichern fehlgeschlagen. Versuche es erneut.",
+      "completed": "Aufgabe abgeschlossen",
+      "inProgress": "Noch in Arbeit",
+      "dontRecord": "Nicht aufzeichnen",
+      "continueWithoutSaving": "Ohne Warten fortfahren"
+    }
   },
   "voice": {
     "title": "Spracheingabe",
@@ -1951,7 +1974,6 @@
     "recurring": "Wiederkehrend",
     "recurringTasks": "Wiederkehrende Aufgaben",
     "allInstances": "Alle Instanzen",
-    "thisInstance": "Diese Instanz",
     "clearProjectFilter": "Projektfilter löschen",
     "moreItems": "+{{count}} weitere",
     "nextOnly": "Nur nächste",
@@ -2254,6 +2276,9 @@
       "secondary": "Späte Enden: {{finish}} · Länger gedauert: {{longer}}"
     },
     "title": "JOBO",
+    "makeTask": "Aufgabe erstellen",
+    "makeTaskHint": "Öffnet aus dieser Ausführung eine neue Posteingangsaufgabe und verknüpft die Ausführung damit.",
+    "makeTaskNotLinked": "Aufgabe hinzugefügt. Die Ausführung wurde inzwischen geändert und daher nicht verknüpft.",
     "undo": {
       "changed": "Dieses Do wurde inzwischen geändert und bleibt, wie es ist.",
       "completionBlocked": "Die Aufgabe ist nicht mehr abgeschlossen, daher kann das Do nicht wieder „Abgeschlossen“ werden. Es bleibt, wie es ist.",

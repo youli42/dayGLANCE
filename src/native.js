@@ -510,21 +510,107 @@ export const nativeSetAutomationIntentsEnabled = (enabled) => {
   } catch (_) {}
 };
 
+// ── Native HTTP (#2048) ─────────────────────────────────────────────────────
+//
+// The native shells make HTTP requests for the WebView (CORS-free WebDAV, the
+// vault, CalDAV/ICS). The original bridge was SYNCHRONOUS: the WebView's JS
+// thread, which also runs input and rendering, waited for every request, so a
+// slow or failing server froze the app for the whole request (Android: up to a
+// 20 s connect plus a 20 s read, retried at startup for minutes). Every call
+// now goes through the async paths below; only an Android shell too old to
+// have httpRequestAsync still takes the blocking call.
+
+// A request whose result never comes back (the page reloaded under it, a shell
+// bug) must not hold its caller forever. Generous: a large upload on a slow
+// link legitimately takes a while, and the shells time out on their own first.
+const NATIVE_HTTP_RESULT_TIMEOUT_MS = 5 * 60 * 1000;
+
+let nativeHttpSeq = 0;
+const pendingNativeHttp = new Map();
+
+const parseNativeHttpResult = (raw) => {
+  if (raw == null) return null;
+  if (typeof raw === 'object') return raw;
+  try { return JSON.parse(raw); } catch { return null; }
+};
+
+// Android: the shell runs the request on a worker thread and answers through
+// window.__dgNativeHttpDone({ id, result }) (MainActivity → evaluateJavascript).
+const androidHttpRequestAsync = (bridge, method, url, headersJson, body) => new Promise((resolve) => {
+  if (typeof window.__dgNativeHttpDone !== 'function') {
+    window.__dgNativeHttpDone = (msg) => {
+      const entry = pendingNativeHttp.get(msg?.id);
+      if (!entry) return;
+      pendingNativeHttp.delete(msg.id);
+      clearTimeout(entry.timer);
+      entry.resolve(msg.result ?? null);
+    };
+  }
+  const id = `h${++nativeHttpSeq}`;
+  const timer = setTimeout(() => {
+    if (pendingNativeHttp.delete(id)) resolve(null);
+  }, NATIVE_HTTP_RESULT_TIMEOUT_MS);
+  pendingNativeHttp.set(id, { resolve, timer });
+  try {
+    bridge.httpRequestAsync(id, method, url, headersJson, body);
+  } catch {
+    pendingNativeHttp.delete(id);
+    clearTimeout(timer);
+    resolve(null);
+  }
+});
+
+// iOS: the same dgbridge:// call the injected shim makes, but asynchronous. The
+// shim's own XHR is synchronous (fine for quick calls, not for the network);
+// BridgeSchemeHandler answers httpRequest from a background queue.
+const iosHttpRequestAsync = (method, url, headersJson, body) => new Promise((resolve) => {
+  try {
+    const xhr = new XMLHttpRequest();
+    const args = encodeURIComponent(JSON.stringify([method, url, headersJson, body]));
+    xhr.open('GET', `dgbridge://native_httpRequest?args=${args}`, true);
+    xhr.onload = () => resolve(xhr.status === 200 ? xhr.responseText : null);
+    xhr.onerror = () => resolve(null);
+    xhr.onabort = () => resolve(null);
+    xhr.send(null);
+  } catch {
+    resolve(null);
+  }
+});
+
+// The Android shell advertises async HTTP only when it can deliver results
+// (MainActivity wires the sink); an older shell has neither method.
+const supportsAsyncHttp = (bridge) => {
+  try { return typeof bridge.httpRequestAsync === 'function' && bridge.supportsAsyncHttp?.() === true; }
+  catch { return false; }
+};
+
 /**
- * Performs a native HTTP request (Android only), bypassing CORS and the
- * /api/webdav-proxy/ server. Used by WebDAV cloud sync providers.
+ * Performs a native HTTP request, bypassing CORS and the /api/webdav-proxy/
+ * server. Used by WebDAV cloud sync, the GLANCEvault and intents transports,
+ * and the ICS task-calendar fetch. Never blocks the JS thread (see above).
  *
  * @param method   HTTP verb: GET, PUT, POST, DELETE, MKCOL, PROPFIND, …
  * @param url      Full target URL
  * @param headers  Plain object of request headers
  * @param body     Request body string (default empty)
- * @returns        { status, ok, body, error? } or null if bridge unavailable
+ * @returns        Promise of { status, ok, body, headers?, error? }, or null
+ *                 when the bridge is unavailable or the call failed outright
  */
-export const nativeHttpRequest = (method, url, headers = {}, body = '') => {
+export const nativeHttpRequest = async (method, url, headers = {}, body = '') => {
   const bridge = nativeBridge();
   if (!bridge?.httpRequest) return null;
+  const headersJson = JSON.stringify(headers ?? {});
+  const payload = body ?? '';
+  // iOS first: its bridge is a Proxy, so every method name "exists".
+  if (isNativeIOS()) {
+    return parseNativeHttpResult(await iosHttpRequestAsync(method, url, headersJson, payload));
+  }
+  if (supportsAsyncHttp(bridge)) {
+    return parseNativeHttpResult(await androidHttpRequestAsync(bridge, method, url, headersJson, payload));
+  }
+  // An Android shell without async HTTP: the blocking call is all it has.
   try {
-    return JSON.parse(bridge.httpRequest(method, url, JSON.stringify(headers), body));
+    return parseNativeHttpResult(bridge.httpRequest(method, url, headersJson, payload));
   } catch {
     return null;
   }

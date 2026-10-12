@@ -49,6 +49,23 @@ async function fetchOrCreateRootSalt(config) {
 }
 
 /**
+ * The WebDAV salt as stored, base64, or null when there is none or WebDAV
+ * cannot be reached. Never creates one: a device that also runs WebDAV intents
+ * seeds the folder's event set with THIS salt, so the key it already holds
+ * is the key the folder uses (intents/directAccessIntentsKey.js).
+ */
+export async function fetchRootSaltB64(config) {
+  try {
+    const res = await webdavFetch('GET', `${eventsDir(config)}${SALT_FILENAME}`, authHeaders(config));
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data?.salt === 'string' && data.salt ? data.salt : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Derive and cache the intents root key for the given WebDAV endpoint.
  * Fetches the shared salt from WebDAV (writing it if this app is first),
  * derives an HKDF root key, and stores it in IndexedDB.

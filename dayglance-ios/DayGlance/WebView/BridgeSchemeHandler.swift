@@ -11,12 +11,41 @@ import WebKit
 /// Each bridge phase adds cases to dispatch(namespace:method:args:).
 final class BridgeSchemeHandler: NSObject, WKURLSchemeHandler {
 
+    /// Calls that do network I/O (#2048). WebKit calls this handler on the main
+    /// thread, and HttpBridge waits on a semaphore for URLSession, so handling
+    /// these inline froze the app's main thread for the whole request (up to its
+    /// 20 s timeout per call). They run on a background queue and are answered
+    /// on the main thread. The renderer calls them with an async XHR
+    /// (native.js nativeHttpRequest); the shim's synchronous XHR still works too.
+    private static let backgroundCalls: Set<String> = ["native_httpRequest"]
+
+    /// Background calls whose task WebKit stopped (the page reloaded or
+    /// navigated) before the result came back. Answering a stopped task raises
+    /// an exception, so their late results are dropped. Main thread only.
+    private var stoppedTasks = Set<ObjectIdentifier>()
+
     func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
-        let result = route(urlSchemeTask.request.url)
+        let url = urlSchemeTask.request.url
+        if let host = url?.host, Self.backgroundCalls.contains(host) {
+            let id = ObjectIdentifier(urlSchemeTask as AnyObject)
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = self.route(url)
+                DispatchQueue.main.async {
+                    if self.stoppedTasks.remove(id) != nil { return }
+                    self.respond(to: urlSchemeTask, with: result)
+                }
+            }
+            return
+        }
+        let result = route(url)
         respond(to: urlSchemeTask, with: result)
     }
 
-    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {
+        // Only a background call can still be in flight when WebKit stops a task;
+        // inline calls have already finished inside start().
+        stoppedTasks.insert(ObjectIdentifier(urlSchemeTask as AnyObject))
+    }
 
     // MARK: - Routing
 

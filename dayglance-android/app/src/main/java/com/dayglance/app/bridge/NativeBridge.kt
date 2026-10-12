@@ -15,6 +15,7 @@ import com.dayglance.app.alarm.ClockAlarm
 import com.dayglance.app.data.HealthRepository
 import com.dayglance.app.data.SharedDataStore
 import com.dayglance.app.settings.SettingsActivity
+import org.json.JSONObject
 import java.io.File
 
 /**
@@ -38,6 +39,10 @@ class NativeBridge(
     // a shell that doesn't provide them simply reports SSE unsupported.
     private val onStartVaultSse: ((url: String, token: String, accountId: String) -> Unit)? = null,
     private val onStopVaultSse: (() -> Unit)? = null,
+    // Async HTTP (#2048): receives { id, result } JSON for each httpRequestAsync
+    // call; the Activity wires it to window.__dgNativeHttpDone. Null means the
+    // shell can't deliver results, and httpRequestAsync answers with an error.
+    private val onHttpResult: ((json: String) -> Unit)? = null,
 ) {
 
     private val health = HealthBridge(healthRepository, onRequestHealthPermission)
@@ -378,13 +383,36 @@ class NativeBridge(
 
     /**
      * Performs a synchronous HTTP request from native code, bypassing CORS.
-     * Used by the WebDAV cloud sync providers when running as an Android app.
+     *
+     * Kept for older web bundles only. It blocks the WebView's JS thread (input
+     * and rendering) for the whole request, so a slow or failing server froze
+     * the app (#2048); the renderer uses httpRequestAsync when it exists.
      *
      * Returns JSON: { status: number, ok: boolean, body: string, error?: string }
      */
     @JavascriptInterface
     fun httpRequest(method: String, url: String, headersJson: String, body: String): String =
         http.request(method, url, headersJson, body)
+
+    /**
+     * Asynchronous HTTP request (#2048). Returns immediately; the request runs on
+     * HttpBridge's worker pool and the result is delivered as
+     * { "id": callId, "result": { status, ok, body, headers?, error? } }
+     * through onHttpResult (window.__dgNativeHttpDone in the renderer).
+     */
+    @JavascriptInterface
+    fun httpRequestAsync(callId: String, method: String, url: String, headersJson: String, body: String) {
+        val sink = onHttpResult ?: return
+        HttpBridge.workers.execute {
+            val raw = http.request(method, url, headersJson, body)
+            val result = try { JSONObject(raw) } catch (_: Exception) { JSONObject(HttpBridge.errorResult("invalid bridge result")) }
+            sink(JSONObject().put("id", callId).put("result", result).toString())
+        }
+    }
+
+    /** Capability probe: the renderer uses httpRequestAsync only when this is true. */
+    @JavascriptInterface
+    fun supportsAsyncHttp(): Boolean = onHttpResult != null
 
     // ── GLANCEvault native SSE (Path 2) ───────────────────────────────────────
 

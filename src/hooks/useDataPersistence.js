@@ -78,7 +78,6 @@ export default function useDataPersistence({
       const completedTaskUidsData = localStorage.getItem('day-planner-task-completed-uids');
       const recurringTasksData = localStorage.getItem('day-planner-recurring-tasks');
       const dailyNotesData = localStorage.getItem('day-planner-daily-notes');
-      const welcomeDismissed = localStorage.getItem('welcomeDismissed') === 'true';
 
       // Parse existing data and normalize defaults so localStorage and React
       // state stay in sync.  Without this write-back, stampTaskTimestamps detects

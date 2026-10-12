@@ -1,6 +1,8 @@
 package com.dayglance.app.sse
 
 import android.util.Log
+import com.dayglance.app.bridge.LanHostPolicy
+import com.dayglance.app.bridge.LanTrust
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -152,9 +154,9 @@ class VaultSseClient(
         // Belt-and-braces (the settings form is the primary gate): never send the
         // Bearer token over cleartext http on the public internet. https is always
         // fine; http is allowed only for loopback/LAN hosts. A refusal is TERMINAL —
-        // reconnecting can't fix a bad scheme. (Android's manifest also blocks
-        // cleartext to non-local hosts; this fails EARLY and with a clear reason.)
-        if (!isSecureOrLanUrl(target)) {
+        // reconnecting can't fix a bad scheme. (The network security config
+        // permits cleartext app-wide, so this check is the only gate.)
+        if (!LanHostPolicy.isSecureOrLanUrl(target)) {
             throw SseTerminalException("insecure", "vault SSE refused: insecure http URL")
         }
         val conn = (target.openConnection() as HttpURLConnection).apply {
@@ -166,8 +168,9 @@ class VaultSseClient(
             // trips it, but a silently-dead connection is detected and reconnected
             // within the timeout instead of parking forever.
             readTimeout = 60_000
-            instanceFollowRedirects = true
+            instanceFollowRedirects = LanHostPolicy.mayFollowRedirects(target)
         }
+        LanTrust.applyTo(conn, target)
         activeConnection = conn
         try {
             val code = conn.responseCode
@@ -200,37 +203,6 @@ class VaultSseClient(
     private fun push(msg: JSONObject) {
         // frameSink hops to the main thread + evaluateJavascript (Activity-wired).
         frameSink(msg.toString())
-    }
-
-    // ── URL transport-security allowlist (mirrors src/sync/vaultUrlPolicy.js) ──────
-
-    /** https is always allowed; http only for loopback/LAN hosts; anything else no. */
-    private fun isSecureOrLanUrl(url: URL): Boolean {
-        val scheme = (url.protocol ?: "").lowercase()
-        if (scheme == "https") return true
-        if (scheme != "http") return false
-        return isLocalOrLanHost(url.host ?: "")
-    }
-
-    /** True for loopback / private-LAN / *.local hosts, where cleartext http is ok. */
-    private fun isLocalOrLanHost(rawHost: String): Boolean {
-        var host = rawHost.trim().lowercase()
-        if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length - 1)
-        if (host.isEmpty()) return false
-        if (host == "localhost" || host.endsWith(".localhost")) return true
-        if (host == "::1") return true
-        if (host.endsWith(".local")) return true
-        val m = Regex("""^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$""").find(host) ?: return false
-        val octets = m.groupValues.drop(1).map { it.toInt() }
-        if (octets.any { it > 255 }) return false
-        val (a, b) = octets
-        return when {
-            a == 127 -> true               // 127.0.0.0/8 loopback
-            a == 10 -> true                // 10.0.0.0/8
-            a == 192 && b == 168 -> true   // 192.168.0.0/16
-            a == 172 && b in 16..31 -> true // 172.16.0.0/12
-            else -> false
-        }
     }
 
     companion object {

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network security policy for the app's own HTTP stack (HttpBridge, the vault
+  SSE client). See issue #2036.
+
+  Cleartext: self-hosted sync servers on the LAN (GLANCEvault, WebDAV, CalDAV)
+  are commonly plain http://, and the renderer's URL policy
+  (src/sync/vaultUrlPolicy.js) accepts http:// for loopback / private-range
+  hosts with an "unencrypted" warning. Android's network security config can
+  only scope cleartext by domain name, not by IP range, so it is permitted
+  here and the LAN-only rule is enforced in code instead
+  (bridge/LanHostPolicy.kt): http:// to a public host is still refused before
+  any connection is opened. iOS allows the same via NSAllowsArbitraryLoads.
+
+  Trust anchors: system CAs only, the platform default, written out so nobody
+  adds src="user" here. User-installed CAs (needed for a self-signed or
+  private-CA LAN server) are trusted per connection, for LAN hosts only, by
+  bridge/LanTrust.kt; added here they would apply to every host, so a work
+  profile's or MDM's CA could intercept traffic to public sync servers.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

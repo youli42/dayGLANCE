@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { weekViewDatesFor, WEEK_VIEW_DAYS } from './weekViewDates.js';
+import { weekViewDatesFor, shiftWeekStripDate, WEEK_VIEW_DAYS } from './weekViewDates.js';
 import { dateToString } from './taskUtils.js';
 
 const strs = (dates) => dates.map(dateToString);
@@ -69,5 +69,52 @@ describe('weekViewDatesFor', () => {
     const strip = weekViewDatesFor({ viewMode: 'week', selectedDate, weekViewMode: 'strict', weekStartDay: 3 });
     for (const d of strip) expect(d).not.toBe(selectedDate);
     expect(selectedDate.getHours()).toBe(12); // and did not normalise it in place
+  });
+});
+
+describe('shiftWeekStripDate', () => {
+  const strip = (selectedDate, opts) => strs(weekViewDatesFor({ viewMode: 'week', selectedDate, ...opts }));
+  const page = (selectedDate, direction, opts) => shiftWeekStripDate({ viewMode: 'week', selectedDate, direction, ...opts });
+
+  // #2045: Sunday 2026-10-11, weeks start Monday, rolling strip Oct 11–17.
+  const sunday = at(2026, 9, 11);
+  const rollingMonday = { weekViewMode: 'rolling', weekStartDay: 1, today: sunday };
+
+  it('previous from a rolling strip shows the week just before it, not two weeks back', () => {
+    const prev = page(sunday, -1, rollingMonday);
+    expect(strip(prev, rollingMonday)).toEqual(
+      ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11']);
+  });
+
+  it('next onto a rolling strip does not skip the week in between', () => {
+    // Viewing Sep 28 – Oct 4 from its Sunday; +7 lands on today, whose rolling strip starts Oct 11.
+    const prev = page(at(2026, 9, 4), 1, rollingMonday);
+    expect(strip(prev, rollingMonday)[0]).toBe('2026-10-05');
+  });
+
+  it('pages every view mode and week start to an adjacent strip, both ways', () => {
+    for (const weekViewMode of ['strict', 'rolling']) {
+      for (let weekStartDay = 0; weekStartDay < 7; weekStartDay++) {
+        for (let offset = 0; offset < 7; offset++) {
+          const today = at(2026, 9, 5 + offset);
+          const opts = { weekViewMode, weekStartDay, today };
+          for (const start of [today, at(2026, 9, 1 + offset), at(2026, 9, 20)]) {
+            const shown = strip(start, opts);
+            const before = strip(page(start, -1, opts), opts);
+            const after = strip(page(start, 1, opts), opts);
+            const dayBefore = new Date(`${shown[0]}T12:00`); dayBefore.setDate(dayBefore.getDate() - 1);
+            const dayAfter = new Date(`${shown[6]}T12:00`); dayAfter.setDate(dayAfter.getDate() + 1);
+            expect(before).toContain(dateToString(dayBefore));
+            expect(after).toContain(dateToString(dayAfter));
+          }
+        }
+      }
+    }
+  });
+
+  it('keeps the seven-day shift for strict weeks, preserving the weekday', () => {
+    const wednesday = at(2026, 8, 16);
+    expect(dateToString(page(wednesday, -1, { weekViewMode: 'strict', weekStartDay: 1 }))).toBe('2026-09-09');
+    expect(dateToString(page(wednesday, 1, { weekViewMode: 'strict', weekStartDay: 1 }))).toBe('2026-09-23');
   });
 });
