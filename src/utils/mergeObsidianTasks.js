@@ -132,6 +132,20 @@ const reviveScannedAgainstTombstone = (t, tombstones, noteMtimes) => {
 //    overwrite the source. An explicit null (the app uncompleted the task)
 //    is the app's statement and still wins; the adoption case (marker, no
 //    app value) isn't a conflict, the parsed value stays.
+//  • completed — the SAME rule, one level stronger, and for the same reason:
+//    a line that does not show a completion this device holds is a stale or
+//    not-yet-written echo of an action dayGLANCE performed, never a statement
+//    that the task was reopened (unchecking in the vault has never reopened a
+//    task — the ruled semantics, pinned by the plugin scenario "a box checked
+//    in either place completes the task; unchecking in Obsidian does not
+//    reopen it", dayglance-obsidian-plugin/test/scope.scenarios.test.ts). The
+//    OR in obsidian.js states this too, but it reads the task context the
+//    CYCLE HEAD froze (hooks/useObsidianSync.js), which is a beat behind a
+//    completion made inside that same cycle — the "clicked it and the box
+//    jumped back" report (2026-10-13). Enforcing it here, where the LIVE copy
+//    is in hand, removes the dependence on that context being fresh. A genuine
+//    app-side UN-complete writes completed:false on both sides, so this rule
+//    cannot resurrect it.
 //  • projectId — app-owned, carried across re-scans unless the SCAN adopted
 //    a vault edit of the line's [project:: …] field (companion §4.3, ruling
 //    G as amended): a resolved id wins, an explicit null (the field
@@ -149,7 +163,9 @@ const reviveScannedAgainstTombstone = (t, tombstones, noteMtimes) => {
 //  • transitionId — rides with the completion STATE: carried while the
 //    merge leaves that state as the app had it (the OR keeps a completed
 //    copy completed), never onto a completion the vault just made (a fresh
-//    transition owns no stale id; the notify emitter mints one).
+//    transition owns no stale id; the notify emitter mints one). The state
+//    it keys off is the POST-CARRY one, because the OR below can keep a
+//    completion the scanned line does not show.
 //
 // THE PHANTOM RE-STAMP, for the record: any key whose value or mere
 // presence differs between the app's copy and the re-parse registers with
@@ -172,7 +188,14 @@ export function preserveObsidianAppFields(old, scanned = {}, noteMtime = undefin
   for (const k of Object.keys(old)) {
     if (!LINE_OWNED.has(k) && !SCAN_DECIDED.has(k) && old[k] !== undefined) carried[k] = old[k];
   }
-  if (carried.transitionId !== undefined && !!old.completed !== !!scanned.completed) delete carried.transitionId;
+  // The completion state the merge will actually produce: `completed` below can
+  // be OR-kept from the app's copy, and a kept completion keeps its transitionId
+  // — deleting it there would drop the one key a re-parse cannot reproduce and
+  // re-stamp the task (obsidian.staleLineRestamp.test.js). It is still dropped
+  // when the VAULT just made a completion the app did not have: that fresh
+  // transition owns no stale id (the notify emitter mints one).
+  const completionStateAfterMerge = !!old.completed || !!scanned.completed;
+  if (carried.transitionId !== undefined && !!old.completed !== completionStateAfterMerge) delete carried.transitionId;
   // THE RECORD'S NOTE TARGET (utils/taskNoteName.js, 2026-09-17): the
   // observed line either carries the link to the task's own note or it does
   // not. Carrying it once marks the link as seen; a later line without it,
@@ -200,6 +223,9 @@ export function preserveObsidianAppFields(old, scanned = {}, noteMtime = undefin
   return {
     ...carried,
     ...(old.completedAt !== undefined ? { completedAt: old.completedAt } : {}),
+    // The completed rule documented above: a completion this copy holds is never
+    // undone by a line that does not show it (a stale, or not-yet-written, echo).
+    ...(old.completed === true && scanned.completed !== true ? { completed: true } : {}),
     ...(scanned.projectId === null ? { projectId: undefined }
       : old.projectId && scanned.projectId === undefined ? { projectId: old.projectId } : {}),
     ...(old.deadline && scanned.deadline === undefined ? { deadline: old.deadline } : {}),

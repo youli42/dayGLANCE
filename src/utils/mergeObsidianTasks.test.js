@@ -131,6 +131,29 @@ describe('preserveObsidianAppFields', () => {
     expect('transitionId' in preserveObsidianAppFields(old, scanned)).toBe(false);
   });
 
+  it('keeps an APP completion against a line that does not show it (the box that jumped back)', () => {
+    // The stale/not-yet-written echo: the app completed the task inside a sync
+    // cycle, so the line this batch parsed is still unchecked. Ruled semantics:
+    // a box checked in either place completes the task, and unchecking in the
+    // vault does not reopen it. Enforced on the live copy here because the OR
+    // in obsidian.js reads the CYCLE-HEAD task context, which is a beat behind.
+    const app = obs('a', { completed: true, completedAt: '2026-10-13T09:00:00+02:00', transitionId: 'tr-9', lastModified: '2026-10-13T07:00:00.000Z' });
+    const staleLine = obs('a', { completed: false });
+    const merged = { ...staleLine, ...preserveObsidianAppFields(app, staleLine) };
+    expect(merged.completed).toBe(true);
+    // ...and the kept completion keeps the transitionId the re-parse cannot
+    // reproduce, so stampTimestamps must not read it as an edit.
+    expect(merged.transitionId).toBe('tr-9');
+    expect(merged.completedAt).toBe('2026-10-13T09:00:00+02:00');
+  });
+
+  it('does not resurrect a completion the app itself cleared', () => {
+    // An app-side un-complete writes completed:false on both sides; the rule
+    // keys off the APP's value, so it cannot bring the completion back.
+    const app = obs('a', { completed: false, completedAt: null });
+    expect({ ...obs('a', { completed: false }), ...preserveObsidianAppFields(app, obs('a', { completed: false })) }.completed).toBe(false);
+  });
+
   it('carries energy', () => {
     expect(preserveObsidianAppFields(obs('a', { energy: 'deep' }), obs('a')).energy).toBe('deep');
     expect('energy' in preserveObsidianAppFields(obs('a'), obs('a'))).toBe(false);

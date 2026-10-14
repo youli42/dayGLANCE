@@ -46,6 +46,23 @@ function restamp(list, stored) {
   return { changed, lastModified: out[0]?.lastModified };
 }
 
+/**
+ * The HOOK's shape (hooks/useObsidianSync.js): the task context is frozen at
+ * cycle head — before any click that lands inside the cycle — while the list
+ * merge runs against LIVE state.
+ */
+function inboundWithStaleCtx(noteText, ctxSource, live) {
+  const ctx = buildExistingObsidianTaskContext(ctxSource, []);
+  const out = { allScheduled: [], allInbox: [], lineSchedule: {} };
+  mergeParsedObsidianTasks(parseTasksFromMarkdown(noteText, DATE, new Set()), ctx, null, out);
+  const scannedIds = new Set([...out.allScheduled, ...out.allInbox].map((t) => String(t.id)));
+  return {
+    tasks: mergeObsidianTasks(live, out.allScheduled, scannedIds, preserveObsidianAppFields),
+    inbox: mergeObsidianTasks([], out.allInbox, scannedIds, preserveObsidianAppFields),
+    inbound: out.allScheduled[0] ?? out.allInbox[0] ?? null,
+  };
+}
+
 const UNTIMED = `# Tasks\n- [ ] Re-arm SSE nudges on Mac ^dg-8w230vhc\n`;
 const TIMED = `# Tasks\n- [ ] 14:00 Re-arm SSE nudges on Mac ^dg-8w230vhc\n`;
 
@@ -94,5 +111,32 @@ describe('a re-parse never re-stamps an unchanged task', () => {
     const r = restamp(after.tasks, [stored]);
     expect(r.changed).toContain('title');
     expect(r.lastModified).toBe(NOW);
+  });
+
+  it('a completion made INSIDE the cycle survives a context that predates it', () => {
+    // The 2026-10-13 report: the user clicks complete while a sync cycle is
+    // running. The hook froze the task context at cycle head (before the click),
+    // so the OR in obsidian.js asks the pre-click copy and answers "not
+    // completed" — the parse of the still-unchecked line then reached the list
+    // merge as completed:false and the box jumped back. The completion must
+    // survive on the LIVE copy, which the list merge has in hand.
+    const cycleHead = scheduledInApp(); // what the hook froze at cycle head
+    const live = { ...cycleHead, completed: true, completedAt: '2026-09-06T13:33:33-06:00', transitionId: 'a5b3', lastModified: '2026-09-06T19:33:33.547Z' };
+    const after = inboundWithStaleCtx(UNTIMED, [cycleHead], [live]);
+
+    // The fixture really is the stale shape: the inbound row (what the writeback
+    // snapshot records) still says unchecked.
+    expect(after.inbound.completed).toBe(false);
+
+    // The merge keeps the app's completion, its timestamp and its transitionId...
+    expect(after.tasks).toHaveLength(1);
+    expect(after.tasks[0].completed).toBe(true);
+    expect(after.tasks[0].completedAt).toBe('2026-09-06T13:33:33-06:00');
+    expect(after.tasks[0].transitionId).toBe('a5b3');
+    // ...and nothing re-stamps: a fabricated lastModified here would outrank
+    // real edits elsewhere (the phantom-re-stamp class above).
+    const r = restamp(after.tasks, [live]);
+    expect(r.changed).toEqual([]);
+    expect(r.lastModified).toBe(live.lastModified);
   });
 });

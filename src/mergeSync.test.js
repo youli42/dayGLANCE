@@ -84,6 +84,33 @@ describe('mergeTaskArrays', () => {
     expect(breakTimestampTies([a], [a], [b]).merged[0]).toEqual(winner);
   });
 
+  it('a tie never throws away a completion (the checkbox that jumped back)', () => {
+    // Equal stamps and differing content that is a COMPLETION. The pick is by
+    // canonical JSON, where `completed:false` sorts below `completed:true`, so
+    // before this rule the incomplete copy won and the user's click was undone
+    // (reported 2026-10-12, reached when a click lands inside
+    // applyEngineData's suppressTimestampRef window and the completion therefore
+    // carries the stamp the incomplete copy already has). Same rule as
+    // mergeRoutineCompletions' "present wins": a completion is never dropped.
+    const time = ts(5);
+    const done = T(1, 'x', time, { completed: true, completedAt: '2026-10-12T12:00:01+02:00', transitionId: 'tr-1' });
+    const undone = T(1, 'x', time, { completed: false, completedAt: null, transitionId: 'tr-1' });
+
+    // Deterministic from either side, and the completed copy is the pick.
+    const fromDone = mergeTaskArrays([done], [undone], {});
+    const fromUndone = mergeTaskArrays([undone], [done], {});
+    expect(fromDone.merged[0].completed).toBe(true);
+    expect(fromUndone.merged[0].completed).toBe(true);
+    expect(fromDone.remoteChanged).toBe(true);   // told the side that lost
+    expect(fromUndone.localChanged).toBe(true);
+    // The losing side is told to change, the winner is not.
+    expect(fromUndone.remoteChanged).toBe(false);
+    expect(fromDone.localChanged).toBe(false);
+    // Idempotent.
+    expect(mergeTaskArrays([fromDone.merged[0]], [done], {}).merged[0].completed).toBe(true);
+    expect(mergeTaskArrays([fromDone.merged[0]], [undone], {}).merged[0].completed).toBe(true);
+  });
+
   // ── The core user scenario ──────────────────────────────────────
   it('CORE: adding tasks on two devices preserves both', () => {
     // Desktop adds Task A and Task B

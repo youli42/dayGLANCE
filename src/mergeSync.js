@@ -53,6 +53,22 @@ export function breakTimestampTies(merged, local, remote, tsField = 'lastModifie
     const cl = canonicalJson(l);
     const cr = canonicalJson(r);
     if (cl === cr) return item;
+    // A completion is never the copy the tie-break throws away. Equal stamps mean
+    // no user edit separates the copies — but the pick below is by canonical JSON,
+    // where `completed:false` sorts BELOW `completed:true`, so an unstamped (or
+    // merely equal-stamped) completed copy lost to the incomplete one and the
+    // checkbox jumped back after the click (2026-10-12 report; a click landing in
+    // applyEngineData's suppressTimestampRef window leaves the completion with the
+    // stamp the incomplete copy already carries, which is exactly this shape).
+    // Preferring the completion is the same rule mergeRoutineCompletions already
+    // applies to a routine on a tie ("present wins, so a completion is never
+    // silently dropped"), and it stays a total order on content, so both devices
+    // still agree whichever side they see it from.
+    if (!!l.completed !== !!r.completed) {
+      const pick = l.completed ? l : r;
+      if (pick === r) localChanged = true; else remoteChanged = true;
+      return pick;
+    }
     const pick = cl < cr ? l : r;
     if (pick === r) localChanged = true; else remoteChanged = true;
     return pick;

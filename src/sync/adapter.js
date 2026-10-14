@@ -20,6 +20,7 @@
 
 import { createSyncEngine } from '@glance-apps/sync';
 import { mergeSyncData } from '../mergeSync.js';
+import { mergeMidCyclePayloadEdits } from './midCyclePayloadEdits.js';
 import { nativeHttpRequest } from '../native.js';
 import { createAbsentRemoteSeedGuard } from './absentRemoteSeedGuard.js';
 import {
@@ -165,12 +166,43 @@ export const createDayGlanceEngine = (callbacks, { appFolderName = 'GLANCE/daygl
     targetKey,
   });
 
+  // ── The mid-cycle edit guard (sync/midCyclePayloadEdits.js) ────────────────
+  // The file-tier cycle reads this device's payload at the head of its merge and
+  // then AWAITS the upload of the merged result before committing it, where the
+  // commit is App.jsx's applyEngineData — a whole-state replace. An edit made in
+  // the user's hands during that upload exists only in live state, so the commit
+  // erases it (a completed task jumps back). The GLANCEvault tier closed this
+  // same hole with mergeMidCycleEdits (sync/commitMerge.js) inside its own cycle;
+  // this tier is a package cycle with no such pass, so the seam is here:
+  // remember what the cycle read, and at commit time fold anything the live side
+  // changed since back into the payload about to be applied.
+  let cycleSnapshot = null;
+  const buildPayloadTracked = async () => {
+    const built = await callbacks.buildPayload();
+    cycleSnapshot = built && typeof built === 'object' && built.data ? built.data : null;
+    return built;
+  };
+  const applyPayloadGuarded = async (data, opts) => {
+    const snapshot = cycleSnapshot;
+    cycleSnapshot = null; // one cycle, one snapshot — never reuse a stale one
+    if (!snapshot || !data) return callbacks.applyPayload(data, opts);
+    // Read live state through the UNtracked builder: this read must not become
+    // the snapshot for a later cycle.
+    let live = null;
+    try {
+      const fresh = await callbacks.buildPayload();
+      live = fresh && typeof fresh === 'object' && fresh.data ? fresh.data : null;
+    } catch { live = null; }
+    if (!live) return callbacks.applyPayload(data, opts);
+    return callbacks.applyPayload(mergeMidCyclePayloadEdits(data, snapshot, live), opts);
+  };
+
   const engine = createSyncEngine({
     ...DAYGLANCE_CONFIG,
     appFolderName,
-    buildPayload:        callbacks.buildPayload,
+    buildPayload:        buildPayloadTracked,
     buildBackupPayload:  callbacks.buildBackupPayload,
-    applyPayload:        callbacks.applyPayload,
+    applyPayload:        applyPayloadGuarded,
     mergePayloads:       (local, remote) => mergeSyncData(local, remote, callbacks.getSyncRetentionDays()),
     validateUploadPayload: (envelope) => validateUploadPayload(envelope, verifiedWriteGuard, {
       // The engine reports a refused upload as a quiet non-success — status
