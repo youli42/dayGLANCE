@@ -62,6 +62,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     revoke: (origin: string): Promise<unknown> => ipcRenderer.invoke('proxy-trust:revoke', origin),
   },
 
+  // Sync proxy — the outbound proxy server the desktop's sync traffic
+  // (WebDAV/CalDAV/GLANCEvault via `proxy-fetch`) connects through. The main
+  // process owns the config file and the dedicated session; `get` returns the
+  // snapshot (no password), `set` validates → applies → persists and returns
+  // { ok, snapshot? , reason? }. Distinct from `proxyTrust` above, which is
+  // the per-origin SSRF consent list, and from the hosted relay the web build
+  // uses — "sync proxy" is always the user's own outbound proxy server.
+  syncProxy: {
+    get: (): Promise<unknown> => ipcRenderer.invoke('sync-proxy:get'),
+    set: (config: unknown): Promise<unknown> => ipcRenderer.invoke('sync-proxy:set', config),
+  },
+
   // Sets the macOS dock badge to the number of incomplete tasks today.
   setBadgeCount: (count: number) => ipcRenderer.send('set-badge-count', count),
   // Asks the main process to leave native fullscreen (no-op when not fullscreen).

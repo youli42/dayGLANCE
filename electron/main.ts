@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, net, protocol, Tray, Menu, nativeImage, nativeTheme, globalShortcut, session, screen, Notification, dialog } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, protocol, Tray, Menu, nativeImage, nativeTheme, globalShortcut, session, screen, Notification, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -58,6 +58,15 @@ import {
   type TrustedHostsFile,
 } from './proxyUrlPolicy.js';
 import { writeFileAtomicSync } from './atomicWrite.js';
+import {
+  defaultSyncProxyConfig,
+  parseSyncProxyConfig,
+  parseSyncProxySettingsFile,
+  proxyRulesFor,
+  bypassRulesFor,
+  snapshotFor,
+  type SyncProxyConfig,
+} from './syncProxySettings.js';
 import { trayReloadDebounceMs } from './trayReloadPolicy.js';
 import { decideRecovery } from './rendererRecovery.js';
 import { buildApplicationMenuTemplate, isApplicationMenuLabels, supportsCustomApplicationMenu, type ApplicationMenuLabels } from './applicationMenu.js';
@@ -738,6 +747,12 @@ ipcMain.handle('proxy-trust:inspect', async (_event, url: unknown) => {
 // (Vault SSE does NOT use this path: the proxy buffers the whole body via
 // response.text() below, which can't stream text/event-stream; SSE uses a direct
 // renderer fetch from the app:// origin instead.)
+//
+// Every request here is issued from the DEDICATED `sync-proxy` session (see the
+// sync-proxy section below), not net.fetch's default session: net.fetch always
+// uses the default session all windows share, so the user's outbound proxy
+// server is scoped to its own partition instead — sync requests connect through
+// it when configured, and everything else (vault SSE, AI, weather) stays direct.
 ipcMain.handle('proxy-fetch', async (_event, method: string, url: string, headers: Record<string, string>, body: string | null) => {
   const upperMethod = (method ?? '').toUpperCase();
   if (!PROXY_ALLOWED_METHODS.has(upperMethod)) {
@@ -750,23 +765,23 @@ ipcMain.handle('proxy-fetch', async (_event, method: string, url: string, header
     // would otherwise blame the server for a 400 it never sent (#2024).
     return { status: 400, ok: false, statusText: msg, body: msg };
   }
-  // 30-second hard timeout — net.fetch has no built-in timeout, so a slow or
+  // 30-second hard timeout — session.fetch has no built-in timeout, so a slow or
   // unresponsive WebDAV server (e.g. a home server that went offline) would
   // hold the cloudSyncInProgressRef lock indefinitely, silently blocking every
   // subsequent 60-second poll until the app is force-quit and restarted.
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
   try {
-    // net.fetch follows redirects itself, but would NOT re-run validateProxyUrl
+    // ses.fetch follows redirects itself, but would NOT re-run validateProxyUrl
     // on the redirect target — a public URL could 302 to http://127.0.0.1/… and
     // bypass the SSRF guard. So follow manually, re-validating every hop.
     const MAX_REDIRECTS = 5;
     let currentUrl = url;
     let currentMethod = upperMethod;
     let currentBody = body;
-    let response: Awaited<ReturnType<typeof net.fetch>>;
+    let response: Awaited<ReturnType<Electron.Session['fetch']>>;
     for (let hop = 0; ; hop++) {
-      response = await net.fetch(currentUrl, {
+      response = await getSyncProxySession().fetch(currentUrl, {
         method: currentMethod,
         headers,
         redirect: 'manual',
@@ -798,6 +813,116 @@ ipcMain.handle('proxy-fetch', async (_event, method: string, url: string, header
   } finally {
     clearTimeout(timeoutId);
   }
+});
+
+// ── Sync proxy (outbound proxy server) ──────────────────────────────────────
+// A user-configured HTTP/HTTPS/SOCKS5 proxy that the proxy-fetch funnel above
+// connects through. Pure logic lives in syncProxySettings.ts (tested); this
+// block owns what cannot be pure: the file, the dedicated session, the auth
+// event and the IPC. That file's header documents what the proxy covers (the
+// proxy-fetch funnel, never vault SSE or AI) and how it interacts with the
+// SSRF guard above, which is unchanged.
+
+const SYNC_PROXY_FILE = 'sync-proxy-settings.json';
+function syncProxyPath(): string {
+  return path.join(app.getPath('userData'), SYNC_PROXY_FILE);
+}
+
+let syncProxyConfig: SyncProxyConfig = defaultSyncProxyConfig();
+
+// Fail-safe load: missing, unreadable or corrupt means OFF, never a half-known
+// proxy — the failure direction forgets the proxy, it never invents one
+// (mirrors loadTrustedHosts above).
+function loadSyncProxySettings(): void {
+  try {
+    if (!fs.existsSync(syncProxyPath())) return;
+    syncProxyConfig = parseSyncProxySettingsFile(fs.readFileSync(syncProxyPath(), 'utf-8'));
+  } catch (err) {
+    console.error('[dayGLANCE] sync-proxy settings file could not be read:', err);
+    syncProxyConfig = defaultSyncProxyConfig();
+  }
+}
+
+function saveSyncProxySettings(): void {
+  try {
+    writeFileAtomicSync(syncProxyPath(), JSON.stringify(syncProxyConfig, null, 2));
+  } catch (err) {
+    console.error('[dayGLANCE] Failed to save the sync-proxy settings file:', err);
+  }
+}
+
+// The dedicated in-memory session every proxy-fetch request is issued from.
+// session.fetch keeps the net.fetch surface (same init, same Response) while
+// binding the request to THIS partition instead of the default session all
+// windows share — so the user's proxy applies to sync requests only, and vault
+// SSE / AI / weather (renderer fetches on the default session) stay direct.
+// cache:false: the callers track ETags themselves; no Chromium HTTP cache in
+// between. Created lazily (always post-ready) so it never races the app boot.
+let syncProxySession: Electron.Session | null = null;
+function getSyncProxySession(): Electron.Session {
+  if (!syncProxySession) {
+    syncProxySession = session.fromPartition('sync-proxy', { cache: false });
+  }
+  return syncProxySession;
+}
+
+// Apply the given config (default: the live one) to the dedicated session.
+// mode 'direct' when off keeps the session's behaviour identical to a
+// proxy-less machine, so the flag gates the routing, never the data.
+async function applySyncProxySettings(config: SyncProxyConfig = syncProxyConfig): Promise<void> {
+  const proxySession = getSyncProxySession();
+  if (!config.enabled) {
+    await proxySession.setProxy({ mode: 'direct' });
+    return;
+  }
+  await proxySession.setProxy({
+    mode: 'fixed_servers',
+    proxyRules: proxyRulesFor(config),
+    proxyBypassRules: bypassRulesFor(config),
+  });
+  logStartup(`sync proxy: ${config.scheme}://${config.host}:${config.port}`);
+}
+
+// HTTP(S) proxy authentication. Chromium raises `login` with authInfo.isProxy
+// for a proxy challenge; SOCKS5 never raises it (SOCKS auth is unsupported by
+// the network stack — the settings UI says so). Credentials answer ONLY a
+// challenge from the configured proxy's host, never an origin server's 401,
+// and only while the proxy is actually enabled.
+app.on('login', (event, _webContents, _details, authInfo, callback) => {
+  if (!authInfo.isProxy || !syncProxyConfig.enabled) return;
+  if (!syncProxyConfig.username || authInfo.host !== syncProxyConfig.host) return;
+  event.preventDefault();
+  callback(syncProxyConfig.username, syncProxyConfig.password);
+});
+
+// Settings IPC. `get` is a read and carries no sender discipline (like
+// local-integrations:get); `set` is the mainWindow-only write: validated,
+// applied to the session FIRST, then committed to the file — so a rejected
+// setProxy never leaves the file claiming a proxy the session is not using.
+ipcMain.handle('sync-proxy:get', () => snapshotFor(syncProxyConfig));
+
+ipcMain.handle('sync-proxy:set', async (event, raw: unknown) => {
+  if (event.sender !== live(mainWindow)?.webContents) return { ok: false, reason: 'Unauthorized sender' };
+  const parsed = parseSyncProxyConfig(raw);
+  if (!parsed.ok) return { ok: false, reason: parsed.reason };
+  // A blank password over an unchanged username is "keep the stored one": the
+  // snapshot never carries the password back to the renderer, so the field
+  // starts empty every session and re-typing it must stay optional. Blank BOTH
+  // username and password clears the credentials outright.
+  const next: SyncProxyConfig = parsed.config.password === ''
+    && parsed.config.username !== ''
+    && parsed.config.username === syncProxyConfig.username
+    ? { ...parsed.config, password: syncProxyConfig.password }
+    : parsed.config;
+  try {
+    await applySyncProxySettings(next);
+  } catch (err) {
+    console.error('[dayGLANCE] Failed to apply the sync proxy:', err);
+    return { ok: false, reason: 'Failed to apply the proxy settings' };
+  }
+  syncProxyConfig = next;
+  saveSyncProxySettings();
+  return { ok: true, snapshot: snapshotFor(syncProxyConfig) };
 });
 
 // Dock badge — macOS only
@@ -1589,6 +1714,12 @@ app.whenReady().then(async () => {
   // prior-install signals — so this MUST read the evidence first.
   loadOrMigrateIntegrationsConfig();
   loadTrustedHosts();
+  // Sync proxy: load the settings file and apply it to the dedicated session
+  // BEFORE any window exists, so no sync request can race the proxy into
+  // effect. A missing or corrupt file means off, and the apply is a no-op
+  // (mode 'direct') then — same as a fresh install.
+  loadSyncProxySettings();
+  await applySyncProxySettings();
 
   logStartup('storage migration: start');
   await migrateFileToAppStorage();
